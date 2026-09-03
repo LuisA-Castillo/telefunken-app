@@ -1,70 +1,26 @@
-// Importamos Bootstrap desde node_modules.
-// Esto carga los estilos CSS del framework.
+// Importar Bootstrap desde node_modules.
 import 'bootstrap/dist/css/bootstrap.min.css';
 
-// Importamos el JavaScript de Bootstrap.
-// Lo necesitaremos más adelante para componentes como modales,
-// dropdowns, offcanvas, etc.
+// Importar el JavaScript de Bootstrap.
 import 'bootstrap';
 
-// Importamos nuestros estilos personalizados.
-// Este archivo tendrá solamente los estilos que Bootstrap no resuelva.
-import './style.css';
+// Importar nuestros estilos personalizados.
+import './styles/main.css';
 
-// Buscamos en index.html el elemento cuyo id es "app".
-// Ese elemento será el contenedor principal de nuestra aplicación.
+/*
+  Importar la función que representa
+  la pantalla de inicio.
+*/
+import { renderHome } from './pages/home'
+
+/*
+  Busco en index.html el elemento cuyo id es "app".
+  Este elemento será el contenedor principal de nuestra aplicación.
+*/
 const app = document.querySelector('#app');
 
-// Insertamos el HTML inicial de nuestra aplicación dentro del div #app.
-app.innerHTML = `
-  <main class="container py-5">
-    <!-- Encabezado principal -->
-     <section class="text-center mb-5">
-        <!-- Nombre de la aplicación -->
-         <h1 class="display-4 fw-bold">
-            Telefunken
-         </h1>
-
-         <!-- Texto secundario -->
-         <p class="lead text-secondary">
-            Lleva la cuenta. Tú concéntrate en jugar.
-         </p>
-     </section>
-
-     <!-- Contenedor de las acciones principales -->
-      <section class="mx-auto" style="max-width: 420px;">
-        <!-- Botón para una nueva partida -->
-         <button type="button" class="btn btn-primary btn-lg w-100 mb-4" id="btnCrearPartida">
-            Crear partida
-         </button>
-
-        <!-- Separador visual -->
-         <div class="text-center text-secondary mb-3">
-            o únete a una existente
-         </div>
-        
-        <!-- Campo para ingresar el código de la partida -->
-         <div class="mb-3">
-            <label for="codigoPartida" class="form-label">
-                Código de partida
-            </label>
-            <input type="text" class="form-control form-control-lg text-uppercase" id="codigoPartida" placeholder="Ej. TELE-4821">
-         </div>
-
-        <!-- Botón para unirse -->
-         <button type="button" class="btn btn-outline-primary btn-lg w-100" id="btnUnirse">
-            Unirme
-         </button>
-
-        <!-- Acceso al historial -->
-         <div class="text-center mt-4">
-            <button type="button" class="btn btn-link text-decoration-none" id="btnHistorial">
-                Ver historial de partidas
-            </button>
-         </div>
-      </section>
-  </main>
-`;
+// Insertar el HTML inicial de nuestra aplicación dentro del div #app.
+app.innerHTML = renderHome();
 
 // Obtener referencia al botón "Crear partida".
 const btnCrearPartida = document.querySelector('#btnCrearPartida')
