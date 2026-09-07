@@ -39,7 +39,7 @@ export const GAMES = [
     {
         code: 'ESC',
         name: 'Escalera'
-    }
+    },
 ]
 
 /*
@@ -67,4 +67,84 @@ export function getInitialPurchases(mode) {
     }
 
     return null;
+}
+
+/*
+  Función para verificar si todavía existe 
+  espacio para añadir otro jugador.
+*/
+export function canAddPlayer(playerCount) {
+  return playerCount < MAX_PLAYERS;
+}
+
+/*
+  Función que mueve un jugador dentro de la lista.
+
+  Recibe:
+  - players: arreglo actual de jugadores.
+  - currentIndex: posición actual.
+  - newIndex: posición a la que queremos moverlo.
+
+  La función modifica el mismo arreglo.
+*/
+export function movePlayer(players, currentIndex, newIndex) {
+    /*
+        Controlamos posiciones inválidas.
+
+        No podemos mover un jugador:
+        - antes de la posición 0;
+        - después de la última posición.
+    */
+    if (newIndex < 0 || newIndex >= players.length) {
+        return;
+    }
+
+    /*
+        splice() permite quitar elementos
+        de un arreglo.
+
+        Aquí quitamos un jugador
+        desde currentIndex.
+
+        splice() devuelve un arreglo,
+        por eso usamos [0] para obtener
+        directamente el jugador eliminado.
+    */
+    const movedPlayer = players.splice(currentIndex, 1)[0];
+
+    /*
+        Ahora insertamos ese mismo jugador
+        en su nueva posición.
+
+        El 0 significa que no queremos eliminar
+        ningún elemento en esa posición.
+    */
+    players.splice(newIndex, 0, movedPlayer);
+}
+
+/*
+  Función que elimina un jugador de la lista
+  usando su posición.
+
+  No permite eliminar al Host.
+*/
+export function removePlayer(players, index) {
+    //Comprobamos que la posición existe
+    if(index < 0 || index >= players.length) {
+        return false;
+    }
+
+    //Obtenemos el jugador que se quiere eliminar
+    const player = players[index];
+
+    //Control para que el Host no pueda eliminarse
+    if(player.isHost) {
+        return false;
+    }
+
+    //Eliminamos al jugador en la posición indicada
+    players.splice(index, 1);
+
+    //Retornar una señal true porque se elimina correctamente
+    return true;
 }
