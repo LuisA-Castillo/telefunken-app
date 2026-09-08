@@ -148,3 +148,39 @@ export function removePlayer(players, index) {
     //Retornar una señal true porque se elimina correctamente
     return true;
 }
+
+/*
+  Función que devuelve el juego correspondiente
+  a una mano del modo ordenado.
+
+  La mano comienza en 1,
+  mientras que los arreglos comienzan en 0.
+  Por eso restamos 1.
+*/
+export function getOrderedGame(currentHand) {
+    const gameIndex = currentHand - 1;
+
+    //Si no corresponde a ninguno de los 7 juegos, devolvemos null
+    if(gameIndex < 0 || gameIndex >= GAMES.length){
+        return null;
+    }
+     return GAMES[gameIndex];
+}
+
+/*
+  Función que determina si se pueden  
+  realizar compras durante una mano.
+
+  En modo libre siempre se puede comprar
+  mientras el jugador tenga compras disponibles.
+
+  En modo ordenado no se permiten compras
+  durante la primera mano (1/3).
+*/
+export function arePurchasesAllowed(mode, currentHand) {
+    if(mode === 'ordenado' && currentHand === 1){
+        return false;
+    }
+
+    return true;
+}
