@@ -1,0 +1,39 @@
+name: CI
+
+on: 
+    pull_request: 
+        branches: 
+            - develop
+            - main
+    
+    push:
+        branches: 
+            - develop
+            - main
+
+jobs:
+    test-and-build:
+        runs-on: ubuntu-latest
+        steps:
+            #Descargar el código del repositorio
+            - name: Checkout repository
+              uses: actions/checkout@v4
+            
+            #Configurar Node.js
+            - name: Setup Node.js
+              uses: actions/setup-node@v4
+              with:
+                node-version: 24
+                cache: npm
+
+            #Instalar las dependencias definidas en package-lock.json
+            - name: Install dependencies
+              run: npm ci
+
+            #Ejecutar las pruebas unitarias --run evita que se quede escuchando
+            - name: Run tests
+              run: npm test -- --run
+
+            #Comprobar que Vite genere correctamente la versión de producción
+            - name: Build application
+              run: npm run build
