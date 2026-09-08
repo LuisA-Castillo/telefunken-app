@@ -1,25 +1,29 @@
 // Importar Bootstrap desde node_modules.
 import 'bootstrap/dist/css/bootstrap.min.css';
 
-// Importar el JavaScript de Bootstrap.
+// Importar JavaScript de Bootstrap.
 import 'bootstrap';
 
-// Importar nuestros estilos personalizados.
+// Importar estilos personalizados.
 import './styles/main.css';
 
 //Importar estado global temporal de la aplicación
 import { appState } from './state/appState';
 
-//Importar el generador de código de partida
+//Importar generador de código de partida
 import { generateGameCode } from './utils/gameCode';
 
-//Importar la regla para gestionar jugadores
+//Importar regla para gestionar jugadores
 import { canAddPlayer, movePlayer, removePlayer } from './utils/gameRules';
+
+//Importar inicialización del juego
+import { initializeGame } from './utils/gameSetup';
 
 //Pantallas de la aplicación.
 import { renderHome } from './pages/home';
 import { renderCreateGame } from './pages/createGame';
 import { renderLobby } from './pages/lobby';
+import { renderGame } from './pages/game';
 
 /*
   Busco en index.html el elemento cuyo id es "app".
@@ -135,153 +139,183 @@ function showCreateGame() {
     showLobby();
   });
 
-  function showLobby() {
-    //Obtener la partida guardada en nuestro estado local
-    const game = appState.currentGame;
-
-    //Si no existe una partida activa, regresar al Home
-    if (!game) {
-      showHome();
-      return;
-    }
-
-    //Renderizar el lobby usando los datos de la partida
-    app.innerHTML = renderLobby(game);
-
-    //Elementos TEMPORALES usados para simular que otro jugador se une a la partida.
-    const nombreNuevoJugador = document.querySelector('#nombreNuevoJugador');
-    const btnAgregarJugador = document.querySelector('#btnAgregarJugador');
-    const errorNuevoJugador = document.querySelector('#errorNuevoJugador');
-
-    //Evento que permite simular la incorporación de un nuevo jugador.
-    btnAgregarJugador.addEventListener('click', () => {
-      //Obtenemos y limpiamos el nombre.
-      const nombre = nombreNuevoJugador.value.trim();
-
-      //Validamos que el nombre no esté vacío.
-      if (nombre === '') {
-        errorNuevoJugador.textContent = 'Ingresa el nombre del jugador.';
-        errorNuevoJugador.classList.remove('d-none');
-        return;
-      }
-
-      //Comprobamos que todavía exista espacio para otro jugador.
-      if (!canAddPlayer(game.players.length)) {
-        errorNuevoJugador.textContent = 'La partida ya tiene el máximo de 6 jugadores.';
-        errorNuevoJugador.classList.remove('d-none');
-        return;
-      }
-
-      //Ocultamos cualquier error anterior.
-      errorNuevoJugador.classList.add('d-none')
-
-      //Comprobamos si ya existe un jugador con el mismo nombre.
-      //Convertimos ambos nombres a minúsculas para que "Beto" y "beto" se consideren iguales.
-      const playerAlreadyExists =
-        game.players.some((player) => {
-          return (
-            player.name.toLowerCase() === nombre.toLowerCase()
-          );
-        });
-
-      if (playerAlreadyExists) {
-        errorNuevoJugador.textContent = 'Ya existe un jugador con ese nombre.';
-        errorNuevoJugador.classList.remove('d-none');
-        return;
-      }
-
-      //Añadimos el nuevo jugador al estado de la partida.
-      game.players.push({
-        name: nombre,
-        isHost: false,
-      });
-
-      /*
-        Volvemos a renderizar el Lobby.
-        Esto actualizará:
-        - la lista;
-        - el contador;
-        - el estado del botón Iniciar;
-        - el botón Agregar.
-      */
-      showLobby()
-    });
-
-    //Obtener los botones de subir, bajar y eliminar para el orden de los jugadores
-    const botonesSubir = document.querySelectorAll('.btn-subir');
-    const botonesBajar = document.querySelectorAll('.btn-bajar');
-    const botonesEliminar = document.querySelectorAll('.btn-eliminar')
-    
-    //Se añade eventos a cada botón de subir
-    botonesSubir.forEach((button) => {
-      button.addEventListener('click', () => {
-        /*
-          dataset.index obtiene el valor
-          almacenado en data-index.
-
-          Ese valor llega como String,
-          por eso usamos Number().
-        */
-        const currentIndex = Number(button.dataset.index);
-
-        //Subir significa mover una posición hacia atrás en el arreglo.
-        const newIndex = currentIndex - 1;
-
-        //Modificamos el orden
-        movePlayer(game.players, currentIndex, newIndex);
-
-        //Volvemos a cargar le lobby con el nuevo orden
-        showLobby();
-      });
-    });
-
-    //Se añade eventos a cada botón de bajar
-    botonesBajar.forEach((button) => {
-      button.addEventListener('click', () => {
-        const currentIndex = Number(button.dataset.index);
-
-        //Bajar significa avanzar una posición en el arreglo.
-        const newIndex = currentIndex + 1;
-
-        movePlayer(game.players, currentIndex, newIndex);
-
-        showLobby();
-      });
-    });
-
-    //Se añade eventos a cada botón de eliminar
-    botonesEliminar.forEach((button) => {
-      button.addEventListener('click', () => {
-        //Obtenemos la posición del jugador
-        const index = Number(button.dataset.index);
-
-        //Intentamos eliminarlo
-        const removed = removePlayer(game.players, index);
-
-        //Si no lo pudo eliminar no hacemos nada
-        if(!removed){
-          return;
-        }
-
-        //Volvemos a renderizar el lobby
-        showLobby();
-      });
-    });
-
-    //Obtener el botón Iniciar partida
-    const btnIniciarPartida = document.querySelector('#btnIniciarPartida');
-
-    //Evento para comprobar que el botón haga algo cuando esté habilitado
-    btnIniciarPartida.addEventListener('click', () => {
-      alert('La partida iniciará aquí');
-    });
-  }
-
   //Evento para regresar a Inicio.
   btnVolverInicio.addEventListener('click', () => {
 
     showHome();
 
+  });
+}
+
+function showLobby() {
+  //Obtener la partida guardada en nuestro estado local
+  const game = appState.currentGame;
+
+  //Si no existe una partida activa, regresar al Home
+  if (!game) {
+    showHome();
+    return;
+  }
+
+  //Renderizar el lobby usando los datos de la partida
+  app.innerHTML = renderLobby(game);
+
+  //Elementos TEMPORALES usados para simular que otro jugador se une a la partida.
+  const nombreNuevoJugador = document.querySelector('#nombreNuevoJugador');
+  const btnAgregarJugador = document.querySelector('#btnAgregarJugador');
+  const errorNuevoJugador = document.querySelector('#errorNuevoJugador');
+
+  //Evento que permite simular la incorporación de un nuevo jugador.
+  btnAgregarJugador.addEventListener('click', () => {
+    //Obtenemos y limpiamos el nombre.
+    const nombre = nombreNuevoJugador.value.trim();
+
+    //Validamos que el nombre no esté vacío.
+    if (nombre === '') {
+      errorNuevoJugador.textContent = 'Ingresa el nombre del jugador.';
+      errorNuevoJugador.classList.remove('d-none');
+      return;
+    }
+
+    //Comprobamos que todavía exista espacio para otro jugador.
+    if (!canAddPlayer(game.players.length)) {
+      errorNuevoJugador.textContent = 'La partida ya tiene el máximo de 6 jugadores.';
+      errorNuevoJugador.classList.remove('d-none');
+      return;
+    }
+
+    //Ocultamos cualquier error anterior.
+    errorNuevoJugador.classList.add('d-none')
+
+    //Comprobamos si ya existe un jugador con el mismo nombre.
+    //Convertimos ambos nombres a minúsculas para que "Beto" y "beto" se consideren iguales.
+    const playerAlreadyExists =
+      game.players.some((player) => {
+        return (
+          player.name.toLowerCase() === nombre.toLowerCase()
+        );
+      });
+
+    if (playerAlreadyExists) {
+      errorNuevoJugador.textContent = 'Ya existe un jugador con ese nombre.';
+      errorNuevoJugador.classList.remove('d-none');
+      return;
+    }
+
+    //Añadimos el nuevo jugador al estado de la partida.
+    game.players.push({
+      name: nombre,
+      isHost: false,
+    });
+
+    /*
+      Volvemos a renderizar el Lobby.
+      Esto actualizará:
+      - la lista;
+      - el contador;
+      - el estado del botón Iniciar;
+      - el botón Agregar.
+    */
+    showLobby()
+  });
+
+  //Obtener los botones de subir, bajar y eliminar para el orden de los jugadores
+  const botonesSubir = document.querySelectorAll('.btn-subir');
+  const botonesBajar = document.querySelectorAll('.btn-bajar');
+  const botonesEliminar = document.querySelectorAll('.btn-eliminar')
+  
+  //Se añade eventos a cada botón de subir
+  botonesSubir.forEach((button) => {
+    button.addEventListener('click', () => {
+      /*
+        dataset.index obtiene el valor
+        almacenado en data-index.
+
+        Ese valor llega como String,
+        por eso usamos Number().
+      */
+      const currentIndex = Number(button.dataset.index);
+
+      //Subir significa mover una posición hacia atrás en el arreglo.
+      const newIndex = currentIndex - 1;
+
+      //Modificamos el orden
+      movePlayer(game.players, currentIndex, newIndex);
+
+      //Volvemos a cargar le lobby con el nuevo orden
+      showLobby();
+    });
+  });
+
+  //Se añade eventos a cada botón de bajar
+  botonesBajar.forEach((button) => {
+    button.addEventListener('click', () => {
+      const currentIndex = Number(button.dataset.index);
+
+      //Bajar significa avanzar una posición en el arreglo.
+      const newIndex = currentIndex + 1;
+
+      movePlayer(game.players, currentIndex, newIndex);
+
+      showLobby();
+    });
+  });
+
+  //Se añade eventos a cada botón de eliminar
+  botonesEliminar.forEach((button) => {
+    button.addEventListener('click', () => {
+      //Obtenemos la posición del jugador
+      const index = Number(button.dataset.index);
+
+      //Intentamos eliminarlo
+      const removed = removePlayer(game.players, index);
+
+      //Si no lo pudo eliminar no hacemos nada
+      if(!removed){
+        return;
+      }
+
+      //Volvemos a renderizar el lobby
+      showLobby();
+    });
+  });
+
+  //Obtener el botón Iniciar partida
+  const btnIniciarPartida = document.querySelector('#btnIniciarPartida');
+
+  //Evento para comprobar que el botón haga algo cuando esté habilitado
+  btnIniciarPartida.addEventListener('click', () => {
+    //Inicializar la partida
+    initializeGame(game);
+
+    //Mostrar mesa
+    showGame();
+  });
+}
+
+/*
+  Función que muestra la pantalla 
+  principal de la partida.
+*/
+function showGame() {
+  //Recuperamos la partida actual
+  const game = appState.currentGame;
+
+  //Si no existe partida regresamos al inicio
+  if(!game) {
+    showHome(); 
+    return;
+  }
+
+  //Rederizamos la mesa
+  app.innerHTML = renderGame(game);
+
+  //Obtener el botón para cerrar la mano
+  const btnFinalizarMano = document.querySelector('#btnFinalizarMano');
+
+  //Evento para finalizar la mano y registrar los resultados
+  btnFinalizarMano.addEventListener('click', () => {
+    alert('Aquí registraremos los resultados de la mano');
   });
 }
 

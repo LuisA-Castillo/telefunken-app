@@ -2,7 +2,7 @@
 import { describe, expect, test } from 'vitest';
 
 //Importar las funciones que se van a probar
-import { isValidPlayerCount, getInitialPurchases, canAddPlayer, movePlayer, removePlayer } from '../utils/gameRules';
+import { isValidPlayerCount, getInitialPurchases, canAddPlayer, movePlayer, removePlayer, getOrderedGame, arePurchasesAllowed } from '../utils/gameRules';
 
 /*
   Pruebas para las reglas correspondientes
@@ -165,5 +165,37 @@ describe('Removing players', () => {
     const result = removePlayer(players, 5);
 
     expect(result).toBe(false);
+  });
+});
+
+/*
+  Pruebas relacionadas con las compras
+  y cuándo podrían realizarse en el modo ordenado.
+*/
+describe('Ordered game rules', () => {
+  test('gets the correct game for the current hand', () => {
+    expect(getOrderedGame(1).code).toBe('1/3');
+
+    expect(getOrderedGame(4).code).toBe('2/4');
+
+    expect(getOrderedGame(7).code).toBe('ESC');
+  });
+
+  test('return null for and invalid ordered hand', () => {
+    expect(getOrderedGame(0)).toBe(null);
+
+    expect(getOrderedGame(8)).toBe(null);
+  });
+
+  test('does not allow purchases in the first ordered game', () => {
+    expect(arePurchasesAllowed('ordenado', 1)).toBe(false);
+  });
+
+  test('allows purchases in later ordered games', () => {
+    expect(arePurchasesAllowed('ordenado', 2)).toBe(true);
+  });
+
+  test('allows purchases in free mode', () => {
+    expect(arePurchasesAllowed('libre', 1)).toBe(true);
   });
 });
