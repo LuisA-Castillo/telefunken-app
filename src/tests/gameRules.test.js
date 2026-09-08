@@ -36,7 +36,7 @@ describe('Initial purchases', () => {
     });
 
     test('free mode starts with 7 purchases', () => {
-        expect(getInitialPurchases('libre')).toBe(77);
+        expect(getInitialPurchases('libre')).toBe(7);
     });
 
     test('unknown mode returns null', () => {
