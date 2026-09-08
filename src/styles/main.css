@@ -1,0 +1,61 @@
+/*
+  Color de fondo general a toda la aplicación.
+*/
+body {
+  background-color: #f8f9fa;
+}
+
+/*
+  La aplicación debe tener
+  como mínimo la altura completa de la pantalla.
+*/
+#app {
+  min-height: 100vh;
+}
+
+/*
+  Columna que contiene los nombres
+  de los juegos.
+*/
+.game-column, .sticky-game-column {
+  width: 10%;
+}
+
+/*
+  Las columnas de jugadores compartirán
+  el espacio restante de la tabla.
+
+  El valor es pequeño porque
+  normalmente solo contienen hasta
+  tres dígitos.
+*/
+.player-column, .score-cell {
+  min-width: 100px;
+}
+
+
+/*
+  Mantiene visible la primera columna
+  cuando hacemos desplazamiento horizontal.
+*/
+.sticky-game-column {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background-color: white;
+}
+
+/*
+  Resalta el juego actual
+  en el modo ordenado.
+*/
+.current-game-row > * {
+  --bs-table-bg: #bfdbfe;
+}
+
+/*
+  La tabla ocupa todo el espacio disponible.
+*/
+.game-table {
+  width: 100%;
+}
