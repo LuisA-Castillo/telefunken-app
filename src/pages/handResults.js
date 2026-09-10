@@ -57,7 +57,7 @@ function renderOrderedPlayerResult(player, currentGame, purchasesAllowed) {
   para un jugador en modo libre.
 */
 function renderFreePlayerResult(game, player) {
-    const pendingGames = getPendingGames(game, player.name);
+    const pendingGames = getPendingGames(game, player.id);
     
     return `
     <!-- ¿Completó un juego? -->

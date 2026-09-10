@@ -34,13 +34,13 @@ describe('Hand management', () => {
 
     test('creates a result with a complete game', () => {
         const result = createPlayerResult({
-            playerName: 'Beto',
+            playerId: 'player-beto',
             completedGameCode: '1/5',
             points: 18,
             purchasesUsed: 2,
         });
 
-        expect(result.playerName).toBe('Beto');
+        expect(result.playerId).toBe('player-beto');
         expect(result.completedGameCode).toBe('1/5');
         expect(result.points).toBe(18);
         expect(result.purchasesUsed).toBe(2);
@@ -48,7 +48,7 @@ describe('Hand management', () => {
 
     test('creates a penalty result', () => {
         const result = createPlayerResult({
-            playerName: 'Mel',
+            playerId: 'player-mel',
             points: 47,
             purchasesUsed: 1,
         });

@@ -8,13 +8,13 @@ export function renderFinalResults(game, winners) {
     //Crear copia de jugadores y ordenarlos de mayor a menor
     //Se usa [...game.players] para no modificar el orden original de juego
     const ranking = [...game.players].sort((playerA, playerB) => {
-        const totalA = getPlayerTotal(game, playerA.name);
-        const totalB = getPlayerTotal(game, playerB.name);
+        const totalA = getPlayerTotal(game, playerA.id);
+        const totalB = getPlayerTotal(game, playerB.id);
 
         //En modo libre se prioriza quien completó los juegos
         if(game.mode === 'libre'){
-            const completedA = getCompletedGamesCount(game, playerA.name);
-            const completedB = getCompletedGamesCount(game, playerB.name);
+            const completedA = getCompletedGamesCount(game, playerA.id);
+            const completedB = getCompletedGamesCount(game, playerB.id);
 
             //La mayor cantidad de juegos completados va primero
             if(completedA !== completedB){
@@ -73,7 +73,7 @@ export function renderFinalResults(game, winners) {
 
                         <tbody>
                             ${ranking.map((player, index) => {
-                                const total = getPlayerTotal(game, player.name);
+                                const total = getPlayerTotal(game, player.id);
 
                                 const isWinner = winnerNames.includes(player.name);
 
@@ -106,9 +106,9 @@ export function renderFinalResults(game, winners) {
   los juegos completados para poder 
   ordenar los resultados en modo libre.
 */
-function getCompletedGamesCount(game, playerName) {
+function getCompletedGamesCount(game, playerId) {
     const completedCodes = game.hands.flatMap((hand) => hand.results
-    .filter((result) => result.playerName === playerName))
+    .filter((result) => result.playerId === playerId))
     .filter((result) => result.completedGameCode !== null)
     .map((result) => result.completedGameCode);
 

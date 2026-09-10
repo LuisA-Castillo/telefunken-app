@@ -5,14 +5,14 @@ import { GAMES } from './gameRules';
   Función que obtiene todos los resultados registrados
   para un jugador a lo largo de la partida.
 */
-export function getPlayerResults(game, playerName) {
+export function getPlayerResults(game, playerId) {
     /*
       flatMap recorre todas las manos
       y devuelve un único arreglo
       con los resultados encontrados.
     */
    return game.hands.flatMap((hand) => 
-    hand.results.filter((result) => result.playerName === playerName)
+    hand.results.filter((result) => result.playerId === playerId)
    );
 }
 
@@ -20,8 +20,8 @@ export function getPlayerResults(game, playerName) {
   Función que obtiene el puntaje registrado
   por un jugador para un juego específico.
 */
-export function getGameScore(game, playerName, gameCode) {
-    const results = getPlayerResults(game, playerName);
+export function getGameScore(game, playerId, gameCode) {
+    const results = getPlayerResults(game, playerId);
 
     //Buscamos el resultado asociado al juego solicitado.
     const result = results.find((playerResult) => playerResult.completedGameCode === gameCode);
@@ -48,8 +48,8 @@ export function getGameScore(game, playerName, gameCode) {
 
   Solo en modo libre.
 */
-export function getPenaltyScores(game, playerName){
-    const results = getPlayerResults(game, playerName);
+export function getPenaltyScores(game, playerId){
+    const results = getPlayerResults(game, playerId);
 
     //Dejar únicamente los resultados sin juego completado.
     const penalties = results
@@ -69,7 +69,7 @@ export function getPenaltyScores(game, playerName){
 */
 export function getMaxPenaltyCount(game){
     const penaltyCounts = game.players.map((player) => 
-        getPenaltyScores(game, player.name).length);
+        getPenaltyScores(game, player.id).length);
 
     if(penaltyCounts.length === 0){
         return 0;
@@ -82,8 +82,8 @@ export function getMaxPenaltyCount(game){
   Función que calcula el puntaje 
   total acumulado por un jugador.
 */
-export function getPlayerTotal(game, playerName){
-    const results = getPlayerResults(game, playerName);
+export function getPlayerTotal(game, playerId){
+    const results = getPlayerResults(game, playerId);
 
     return results.reduce((total, result) => total + result.points, 0);
 }
@@ -92,9 +92,9 @@ export function getPlayerTotal(game, playerName){
   Función que obtiene los juegos que un 
   jugador todavía no ha completado.
 */
-export function getPendingGames(game, playerName) {
+export function getPendingGames(game, playerId) {
   //Obtener los resultados historicos de juegos ya completados
-  const results = getPlayerResults(game, playerName);
+  const results = getPlayerResults(game, playerId);
 
   //Extraer los códigos de juegos ya completados
   const completedGameCodes = results.filter((result) => result.completedGameCode !== null).map((result) => result.completedGameCode);

@@ -106,7 +106,7 @@ export function renderGame(game) {
                                         Obtenemos el puntaje que tiene
                                         este jugador para este juego.
                                     */
-                                    const score = getGameScore(game, player.name, gameItem.code);
+                                    const score = getGameScore(game, player.id, gameItem.code);
 
                                     let displayedScore = '';
 
@@ -135,7 +135,7 @@ export function renderGame(game) {
 
                                 ${game.players.map((player) => {
                                     /*Obtener todas las penalizaciones del jugador*/
-                                    const penalties = getPenaltyScores(game, player.name);
+                                    const penalties = getPenaltyScores(game, player.id);
 
                                     /*Buscar la penalización de esa fila*/
                                     const penalty = penalties[penaltyIndex];
@@ -159,7 +159,7 @@ export function renderGame(game) {
                             </th>
                             ${game.players.map((player) => `
                                 <td class="text-center score-cell">
-                                    ${getPlayerTotal(game, player.name)}
+                                    ${getPlayerTotal(game, player.id)}
                                 </td>    
                             `).join('')}
                         </tr>
