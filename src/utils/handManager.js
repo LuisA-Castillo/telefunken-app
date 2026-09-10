@@ -32,14 +32,14 @@ export function createHand(game) {
   jugador dentro de una mano.
 */
 export function createPlayerResult({
-    playerName,
+    playerId,
     completedGameCode = null,
     points,
     purchasesUsed = 0,
 }) {
     return {
         //Jugador al que le pertenece el resultado
-        playerName,
+        playerId,
         /*
           Código del juego completado.
 

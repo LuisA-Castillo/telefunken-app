@@ -4,6 +4,9 @@ import { GAMES, getOrderedGame, arePurchasesAllowed } from '../utils/gameRules';
 //Importar funciones del calculo de puntajes
 import { getGameScore, getPenaltyScores, getMaxPenaltyCount, getPlayerTotal } from '../utils/gameTable';
 
+//Importar función de finalización del juego
+import { isGameFinished } from '../utils/handResults';
+
 //Renderizar la pantalla principal
 export function renderGame(game) {
     //Obtenemos al repartidor actual usando dealerIndex
@@ -17,6 +20,9 @@ export function renderGame(game) {
 
     //Calcular cuántas filas adicionales necesitamos para mostrar las penalizaciones.
     const maxPenaltyCount = getMaxPenaltyCount(game);
+
+    //Verificamos si el juego ha finalizado
+    const gameFinished = isGameFinished(game);
 
     return `
     <main class="container-fluid py-3">
@@ -100,7 +106,7 @@ export function renderGame(game) {
                                         Obtenemos el puntaje que tiene
                                         este jugador para este juego.
                                     */
-                                    const score = getGameScore(game, player.name, gameItem.code);
+                                    const score = getGameScore(game, player.id, gameItem.code);
 
                                     let displayedScore = '';
 
@@ -129,7 +135,7 @@ export function renderGame(game) {
 
                                 ${game.players.map((player) => {
                                     /*Obtener todas las penalizaciones del jugador*/
-                                    const penalties = getPenaltyScores(game, player.name);
+                                    const penalties = getPenaltyScores(game, player.id);
 
                                     /*Buscar la penalización de esa fila*/
                                     const penalty = penalties[penaltyIndex];
@@ -153,7 +159,7 @@ export function renderGame(game) {
                             </th>
                             ${game.players.map((player) => `
                                 <td class="text-center score-cell">
-                                    ${getPlayerTotal(game, player.name)}
+                                    ${getPlayerTotal(game, player.id)}
                                 </td>    
                             `).join('')}
                         </tr>
@@ -164,9 +170,19 @@ export function renderGame(game) {
 
         <!-- Finalizar la mano -->
         <section class="mt-4">
-            <button type="button" class="btn btn-primary btn-lg w-100" id="btnFinalizarMano">
-                Finalizar mano
-            </button>
+            ${!gameFinished ? `
+                <button type="button" class="btn btn-primary btn-lg w-100" id="btnFinalizarMano">
+                    Finalizar mano
+                </button>
+            ` : `
+                <div class="alert alert-success text-center mb-0">
+                    Partida finalizada
+                </div>
+
+                <button type="button" class="btn btn-primary w-100" id="btnVerResultadosFinales">
+                    Ver resultados finales 
+                </button>
+            `}
         </section>
     </main>
     `;
