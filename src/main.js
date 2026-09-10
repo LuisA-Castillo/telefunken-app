@@ -10,20 +10,25 @@ import './styles/main.css';
 //Importar estado global temporal de la aplicación
 import { appState } from './state/appState';
 
-//Importar generador de código de partida
+//Importar funión de generador de código de partida
 import { generateGameCode } from './utils/gameCode';
 
-//Importar regla para gestionar jugadores
-import { canAddPlayer, movePlayer, removePlayer } from './utils/gameRules';
+//Importar funciones de regla para gestionar jugadores
+import { canAddPlayer, getOrderedGame, movePlayer, removePlayer } from './utils/gameRules';
 
-//Importar inicialización del juego
+//Importar funciones para la inicialización del juego
 import { initializeGame } from './utils/gameSetup';
+
+//Importar funiones para manejar los resultados de la mano
+import { createPlayerResult, validatePlayerResult, saveHandResults, validateHandResults, advanceToNextHand, isGameFinished, getGameWinners } from './utils/handResults';
 
 //Pantallas de la aplicación.
 import { renderHome } from './pages/home';
 import { renderCreateGame } from './pages/createGame';
 import { renderLobby } from './pages/lobby';
 import { renderGame } from './pages/game';
+import { renderHandResults } from './pages/handResults';
+import { renderFinalResults } from './pages/finalResults';
 
 /*
   Busco en index.html el elemento cuyo id es "app".
@@ -147,6 +152,10 @@ function showCreateGame() {
   });
 }
 
+/*
+  Función que muestra el lobby 
+  esperando que se unan los jugadores.
+*/
 function showLobby() {
   //Obtener la partida guardada en nuestro estado local
   const game = appState.currentGame;
@@ -295,7 +304,7 @@ function showLobby() {
 
 /*
   Función que muestra la pantalla 
-  principal de la partida.
+  principal de la partida, la tabla de anotaciones.
 */
 function showGame() {
   //Recuperamos la partida actual
@@ -314,8 +323,171 @@ function showGame() {
   const btnFinalizarMano = document.querySelector('#btnFinalizarMano');
 
   //Evento para finalizar la mano y registrar los resultados
-  btnFinalizarMano.addEventListener('click', () => {
-    alert('Aquí registraremos los resultados de la mano');
+  if(btnFinalizarMano){
+    btnFinalizarMano.addEventListener('click', () => {
+      showHandResults();
+    });
+  }
+
+  const btnVerResultadosFinales = document.querySelector('#btnVerResultadosFinales');
+
+  if(btnVerResultadosFinales){
+    btnVerResultadosFinales.addEventListener('click', () => {
+      showFinalResults();
+    });
+  }
+}
+
+/*
+  Función que perimte ingresar los  
+  datos al finalizar la mano.
+*/
+function showHandResults() {
+  const game = appState.currentGame;
+
+  if(!game){
+    showHome();
+    return;
+  }
+
+  app.innerHTML = renderHandResults(game);
+
+  //Configurar el comportamiento de los formularios del modo libre
+  if(game.mode === 'libre'){
+    game.players.forEach((player) => {
+      const yesRadio = document.querySelector(`#completedYes-${player.name}`);
+      const noRadio = document.querySelector(`#completedNo-${player.name}`);
+      const gameSelect = document.querySelector(`#game-${player.name}`);
+
+      //Al seleccionar "Sí" se habilita el selector
+      yesRadio.addEventListener('change', () => {
+        gameSelect.disabled = false;
+      });
+
+      //Al seleccionar "No" se deshabilita el selector y se elimina cualquier seleccion previa
+      noRadio.addEventListener('change', () => {
+        gameSelect.disabled = true;
+        gameSelect.value = '';
+      });
+    });
+  }
+
+  const btnVolverJuego = document.querySelector('#btnVolverJuego');
+  const btnGuardarResultados = document.querySelector('#btnGuardarResultados');
+
+  btnVolverJuego.addEventListener('click', () => {
+    showGame();
+  });
+
+  btnGuardarResultados.addEventListener('click', () => {
+    //Obtener motivo de la terminación de la mano
+    const endReasonInput = document.querySelector('input[name="endReason"]:checked');
+
+    if(!endReasonInput){
+      alert('Selecciona cómo terminó la mano.');
+      return;
+    }
+
+    const results = [];
+
+    //Recorrer cada jugador para leer su formulario
+    for(const player of game.players){
+      const pointsInput = document.querySelector(`#points-${player.name}`);
+
+      const purchasesInput = document.querySelector(`#purchases-${player.name}`);
+
+      const points = pointsInput.value;
+
+      //En la primera mano del modo ordenado no existe el input de compras. Se usa 0 cuando no se encuentra el campo
+      const purchasesUsed = purchasesInput ? purchasesInput.value : '0';
+
+      let completedGameCode = null;
+      let gameCompleted = true;
+
+      //En el modo libre debemos consultar si se completó un juego
+      if(game.mode === 'libre'){
+        const completedInput = document.querySelector(`input[name=completed-${player.name}]:checked`);
+
+        //Obligatorio indicar Sí o No
+        if(!completedInput){
+          alert(`${player.name}: indica que sí completó un juego.`);
+          return;
+        }
+
+        gameCompleted = completedInput.value === 'yes';
+
+        if(gameCompleted) {
+          const gameSelect = document.querySelector(`#game-${player.name}`);
+
+          completedGameCode = gameSelect.value;
+        }
+      } else {
+        //En el modo ordenado ya se tiene determinado el número de mano
+        const orderedGame = getOrderedGame(game.currentHand);
+
+        completedGameCode = orderedGame.code;
+      }
+
+      //Validar antes de construir el resultado definitivo
+      const isValid = validatePlayerResult(completedGameCode, points, purchasesUsed, player.purchasesRemaining, gameCompleted);
+
+      if(!isValid){
+        alert(`${player.name}: revisa los datos ingresados`);
+        return;
+      }
+
+      //Convertir puntos y compras a numeros
+      const result = createPlayerResult(player.name, completedGameCode, Number(points), Number(purchasesUsed));
+
+      results.push(result);
+    }
+
+    //Validar el arreglo completo
+    const isHandValid = validateHandResults(endReasonInput.value, results);
+
+    if(!isHandValid){
+      alert('Los puntajes no coinciden con la forma en que terminó la mano.');
+      return;
+    }
+
+    //Todos los jugadores tienen resultados válidos y podemos guardar la mano
+    saveHandResults(game, endReasonInput.value, results);
+
+    //Verificar si el juego ha finalizado
+    const gameFinished = isGameFinished(game);
+
+    //Si terminó no se avanza de mano
+    if(gameFinished){
+      showFinalResults();
+      return;
+    }
+
+    //Si aún continua la partida, se prepara la siguiente mano
+    advanceToNextHand(game);
+
+    //Regresar a la tabla para visualizar resultados
+    showGame();
+  });
+}
+
+/*
+  Función que perimte mostra los  
+  resultados finales y al o los ganadores.
+*/
+function showFinalResults() {
+  const game = appState.currentGame;
+
+  //Calcular el o los ganadores
+  const winners = getGameWinners(game);
+
+  //Renderizar la pantalla final
+  app.innerHTML = renderFinalResults(game, winners);
+
+  //Fucnionalidad del botón para revisar los resultados
+  const btnVolverTabla = document.querySelector('#btnVolverTabla');
+
+  btnVolverTabla.addEventListener('click', () => {
+    showGame();
   });
 }
 

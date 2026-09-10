@@ -2,7 +2,7 @@
 import { describe, expect, test } from 'vitest';
 
 //Importar las funciones que se van a probar
-import { getPlayerResults, getGameScore, getPenaltyScores, getMaxPenaltyCount, getPlayerTotal } from '../utils/gameTable';
+import { getPlayerResults, getGameScore, getPenaltyScores, getMaxPenaltyCount, getPlayerTotal, getPendingGames } from '../utils/gameTable';
 
 //Creamos una partida
 const game = {
@@ -121,5 +121,13 @@ describe('Game table calculations', () => {
     test('calculates the player total', () => {
         expect(getPlayerTotal(game, 'Beto')).toBe(128);
         expect(getPlayerTotal(game, 'Mel')).toBe(67);
+    });
+
+    test('gets pending games for a player', () => {
+        const pendingGames = getPendingGames(game, 'Beto');
+
+        const pendingCodes = pendingGames.map((gameItem) => gameItem.code);
+
+        expect(pendingCodes).toEqual(['2/3', '1/4', '2/4', '2/5', 'ESC']);
     });
 });

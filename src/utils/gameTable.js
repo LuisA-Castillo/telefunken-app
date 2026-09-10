@@ -1,3 +1,6 @@
+//Importar funciones de gameRules
+import { GAMES } from './gameRules';
+
 /*
   Función que obtiene todos los resultados registrados
   para un jugador a lo largo de la partida.
@@ -83,4 +86,19 @@ export function getPlayerTotal(game, playerName){
     const results = getPlayerResults(game, playerName);
 
     return results.reduce((total, result) => total + result.points, 0);
+}
+
+/*
+  Función que obtiene los juegos que un 
+  jugador todavía no ha completado.
+*/
+export function getPendingGames(game, playerName) {
+  //Obtener los resultados historicos de juegos ya completados
+  const results = getPlayerResults(game, playerName);
+
+  //Extraer los códigos de juegos ya completados
+  const completedGameCodes = results.filter((result) => result.completedGameCode !== null).map((result) => result.completedGameCode);
+
+  //Devolver solo los juegos que todavía no se han completado
+  return GAMES.filter((gameItem) => !completedGameCodes.includes(gameItem.code));
 }
