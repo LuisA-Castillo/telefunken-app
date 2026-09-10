@@ -22,6 +22,9 @@ import { initializeGame } from './utils/gameSetup';
 //Importar funiones para manejar los resultados de la mano
 import { createPlayerResult, validatePlayerResult, saveHandResults, validateHandResults, advanceToNextHand, isGameFinished, getGameWinners } from './utils/handResults';
 
+//Importar la generación de Ids
+import { generatePlayerId } from './utils/playerId';
+
 //Pantallas de la aplicación.
 import { renderHome } from './pages/home';
 import { renderCreateGame } from './pages/createGame';
@@ -134,6 +137,7 @@ function showCreateGame() {
       //el host es el primer jugador de  la partida
       players: [
         {
+          id: generatePlayerId(),
           name: nombre,
           isHost: true
         },
@@ -213,6 +217,7 @@ function showLobby() {
 
     //Añadimos el nuevo jugador al estado de la partida.
     game.players.push({
+      id: generatePlayerId(),
       name: nombre,
       isHost: false,
     });
@@ -437,7 +442,7 @@ function showHandResults() {
       }
 
       //Convertir puntos y compras a numeros
-      const result = createPlayerResult(player.name, completedGameCode, Number(points), Number(purchasesUsed));
+      const result = createPlayerResult(player.id, completedGameCode, Number(points), Number(purchasesUsed));
 
       results.push(result);
     }

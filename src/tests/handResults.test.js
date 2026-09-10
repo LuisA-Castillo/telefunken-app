@@ -11,14 +11,14 @@ import { createPlayerResult, createPlayerResult, validatePlayerResult, saveHandR
 describe('Hand results', () => {
     test('creates a completed game result', () => {
         const result = createPlayerResult(
-            'Beto',
+            'player-beto',
             '1/3',
             34,
             2
         );
 
         expect(result).toEqual({
-            playerName: 'Beto',
+            playerId: 'player-beto',
             completedGameCode: '1/3',
             points: 34,
             purchasesUsed: 2,
@@ -27,14 +27,14 @@ describe('Hand results', () => {
 
     test('creates a penalty result', () => {
         const result = createPlayerResult(
-            'Beto',
+            'player-beto',
             null,
             52,
             1
         );
 
         expect(result).toEqual({
-            playerName: 'Beto',
+            playerId: 'player-beto',
             completedGameCode: null,
             points: 52,
             purchasesUsed: 1,
@@ -64,10 +64,12 @@ describe('Hand results', () => {
             hands: [],
             players: [
                 {
+                    id: 'player-beto',
                     name: 'Beto',
                     purchasesRemaining: 7,
                 },
                 {
+                    id: 'player-mel',
                     name: 'Mel',
                     purchasesRemaining: 7,
                 },
@@ -76,13 +78,13 @@ describe('Hand results', () => {
 
         const results = [
             {
-                playerName: 'Beto',
+                playerId: 'player-beto',
                 completedGameCode: null,
                 points: 52,
                 purchasesUsed: 1,
             },
             {
-                playerName: 'Mel',
+                playerId: 'player-mel',
                 completedGameCode: '1/3',
                 points: 18,
                 purchasesUsed: 2,
@@ -157,9 +159,18 @@ describe('Hand results', () => {
             currentHand: 1,
             dealerIndex: 0,
             players: [
-                { name: 'Beto' },
-                { name: 'Mel' },
-                { name: 'Luigi' },
+                { 
+                    id: 'player-beto',
+                    name: 'Beto' 
+                },
+                { 
+                    id: 'player-mel',
+                    name: 'Mel' 
+                },
+                { 
+                    id: 'player-luigi',
+                    name: 'Luigi' 
+                },
             ],
         };
 
@@ -175,9 +186,18 @@ describe('Hand results', () => {
             currentHand: 3,
             dealerIndex: 2,
             players: [
-                { name: 'Beto' },
-                { name: 'Mel' },
-                { name: 'Luigi' },
+                { 
+                    id: 'player-beto',
+                    name: 'Beto' 
+                },
+                { 
+                    id: 'player-mel',
+                    name: 'Mel' 
+                },
+                { 
+                    id: 'player-luigi',
+                    name: 'Luigi' 
+                },
             ],
         };
 
@@ -229,18 +249,20 @@ describe('Hand results', () => {
         const game = {
             mode: 'libre',
             players: [
-                {
-                    name: 'Beto',
+                { 
+                    id: 'player-beto',
+                    name: 'Beto' 
                 },
-                {
-                    name: 'Mel',
+                { 
+                    id: 'player-mel',
+                    name: 'Mel' 
                 },
             ],
             hands: [
                 {
                     results: [
                         {
-                            playerName: 'Beto',
+                            playerId: 'player-beto',
                             completedGameCode: '1/3',
                         },
                     ],
@@ -248,7 +270,7 @@ describe('Hand results', () => {
                 {
                     results: [
                         {
-                            playerName: 'Beto',
+                            playerId: 'player-beto',
                             completedGameCode: '2/3',
                         },
                     ],
@@ -256,7 +278,7 @@ describe('Hand results', () => {
                 {
                     results: [
                         {
-                            playerName: 'Beto',
+                            playerId: 'player-beto',
                             completedGameCode: '1/4',
                         },
                     ],
@@ -264,7 +286,7 @@ describe('Hand results', () => {
                 {
                     results: [
                         {
-                            playerName: 'Beto',
+                            playerId: 'player-beto',
                             completedGameCode: '2/4',
                         },
                     ],
@@ -272,7 +294,7 @@ describe('Hand results', () => {
                 {
                     results: [
                         {
-                            playerName: 'Beto',
+                            playerId: 'player-beto',
                             completedGameCode: '1/5',
                         },
                     ],
@@ -280,7 +302,7 @@ describe('Hand results', () => {
                 {
                     results: [
                         {
-                            playerName: 'Beto',
+                            playerId: 'player-beto',
                             completedGameCode: '2/5',
                         },
                     ],
@@ -288,7 +310,7 @@ describe('Hand results', () => {
                 {
                     results: [
                         {
-                            playerName: 'Beto',
+                            playerId: 'player-beto',
                             completedGameCode: 'ESC',
                         },
                     ],
@@ -303,18 +325,20 @@ describe('Hand results', () => {
         const game = {
             mode: 'libre',
             players: [
-                {
-                    name: 'Beto',
+                { 
+                    id: 'player-beto',
+                    name: 'Beto' 
                 },
-                {
-                    name: 'Mel',
+                { 
+                    id: 'player-mel',
+                    name: 'Mel' 
                 },
             ],
             hands: [
                 {
                     results: [
                         {
-                            playerName: 'Beto',
+                            playerId: 'player-beto',
                             completedGameCode: '1/3',
                         },
                     ],
@@ -322,7 +346,7 @@ describe('Hand results', () => {
                 {
                     results: [
                         {
-                            playerName: 'Beto',
+                            playerName: 'player-beto',
                             completedGameCode: '2/3',
                         },
                     ],
@@ -330,7 +354,7 @@ describe('Hand results', () => {
                 {
                     results: [
                         {
-                            playerName: 'Beto',
+                            playerName: 'player-beto',
                             completedGameCode: '1/4',
                         },
                     ],
@@ -338,7 +362,7 @@ describe('Hand results', () => {
                 {
                     results: [
                         {
-                            playerName: 'Beto',
+                            playerId: 'player-beto',
                             completedGameCode: '2/4',
                         },
                     ],
@@ -346,7 +370,7 @@ describe('Hand results', () => {
                 {
                     results: [
                         {
-                            playerName: 'Beto',
+                            playerId: 'player-beto',
                             completedGameCode: '1/5',
                         },
                     ],
@@ -354,7 +378,7 @@ describe('Hand results', () => {
                 {
                     results: [
                         {
-                            playerName: 'Beto',
+                            playerId: 'player-beto',
                             completedGameCode: '2/5',
                         },
                     ],
@@ -369,25 +393,34 @@ describe('Hand results', () => {
         const game = {
             mode: 'ordenado',
             players: [
-                { name: 'Beto' },
-                { name: 'Mel' },
-                { name: 'Luigi' },
+                { 
+                    id: 'player-beto',
+                    name: 'Beto' 
+                },
+                { 
+                    id: 'player-mel',
+                    name: 'Mel' 
+                },
+                { 
+                    id: 'player-luigi',
+                    name: 'Luigi' 
+                },
             ],
             hands: [
                 {
                     results: [
                         {
-                            playerName: 'Beto',
+                            playerId: 'player-beto',
                             completedGameCode: '1/3',
                             points: 20,
                         },
                         {
-                            playerName: 'Mel',
+                            playerId: 'player-mel',
                             completedGameCode: '1/3',
                             points: 0,
                         },
                         {
-                            playerName: 'Luigi',
+                            playerId: 'player-luigi',
                             completedGameCode: '1/3',
                             points: 30,
                         },
@@ -396,17 +429,17 @@ describe('Hand results', () => {
                 {
                     results: [
                         {
-                            playerName: 'Beto',
+                            playerId: 'player-beto',
                             completedGameCode: '2/3',
                             points: 15,
                         },
                         {
-                            playerName: 'Mel',
+                            playerId: 'player-mel',
                             completeGameCode: '2/3',
                             points: 5,
                         },
                         {
-                            playerName: 'Luigi',
+                            playerId: 'player-luigi',
                             completedGameCode: '2/3',
                             points: 0,
                         },
@@ -424,25 +457,34 @@ describe('Hand results', () => {
         const game = {
             mode: 'ordenado',
             players: [
-                { name: 'Beto' },
-                { name: 'Mel' },
-                { name: 'Luigi' },
+                { 
+                    id: 'player-beto',
+                    name: 'Beto' 
+                },
+                { 
+                    id: 'player-mel',
+                    name: 'Mel' 
+                },
+                { 
+                    id: 'player-luigi',
+                    name: 'Luigi' 
+                },
             ],
             hands: [
                 {
                     results: [
                         {
-                            playerName: 'Beto',
+                            playerId: 'player-beto',
                             completedGameCode: '1/3',
                             points: 20,
                         },
                         {
-                            playerName: 'Mel',
+                            playerId: 'player-mel',
                             completedGameCode: '1/3',
                             points: 20,
                         },
                         {
-                            playerName: 'Luigi',
+                            playerId: 'player-luigi',
                             completedGameCode: '1/3',
                             points: 30,
                         },
@@ -471,9 +513,18 @@ describe('Hand results', () => {
             mode: 'libre',
 
             players: [
-                { name: 'Beto' },
-                { name: 'Mel' },
-                { name: 'Techi' },
+                { 
+                    id: 'player-beto',
+                    name: 'Beto' 
+                },
+                { 
+                    id: 'player-mel',
+                    name: 'Mel' 
+                },
+                { 
+                    id: 'player-luigi',
+                    name: 'Luigi' 
+                },
             ],
 
             hands:
@@ -481,12 +532,12 @@ describe('Hand results', () => {
                     (gameCode) => ({
                         results: [
                             {
-                                playerName: 'Beto',
+                                playerId: 'player-beto',
                                 completedGameCode: gameCode,
                                 points: 10,
                             },
                             {
-                                playerName: 'Mel',
+                                playerId: 'player-mel',
                                 completedGameCode: gameCode,
                                 points: 5,
                             },
@@ -495,7 +546,7 @@ describe('Hand results', () => {
                                   Luigi no completa
                                   ningún juego.
                                 */
-                                playerName: 'Luigi',
+                                playerId: 'player-luigi',
                                 completedGameCode: null,
                                 points: 1,
                             },
@@ -524,9 +575,18 @@ describe('Hand results', () => {
             mode: 'libre',
 
             players: [
-                { name: 'Beto' },
-                { name: 'Mel' },
-                { name: 'Techi' },
+                { 
+                    id: 'player-beto',
+                    name: 'Beto' 
+                },
+                { 
+                    id: 'player-mel',
+                    name: 'Mel' 
+                },
+                { 
+                    id: 'player-luigi',
+                    name: 'Luigi' 
+                },
             ],
 
             hands:
@@ -534,12 +594,12 @@ describe('Hand results', () => {
                     (gameCode) => ({
                         results: [
                             {
-                                playerName: 'Beto',
+                                playerId: 'player-beto',
                                 completedGameCode: gameCode,
                                 points: 20,
                             },
                             {
-                                playerName: 'Mel',
+                                playerId: 'player-mel',
                                 completedGameCode: null,
                                 points: 1,
                             },

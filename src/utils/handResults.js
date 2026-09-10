@@ -5,9 +5,9 @@ import { GAMES } from './gameRules';
   Función que crea el resultado de un 
   jugador correspondiente a una mano.
 */
-export function createPlayerResult(playerName, completedGameCode, points, purchasesUsed) {
+export function createPlayerResult(playerId, completedGameCode, points, purchasesUsed) {
     return {
-        playerName,
+        playerId,
         completedGameCode,
         points,
         purchasesUsed,
@@ -60,7 +60,7 @@ export function saveHandResults(game, endReason, results) {
 
     //Descontar las compras utilizadas
     results.forEach((result) => {
-        const player = game.players.find((player) => player.name === result.playerName);
+        const player = game.players.find((player) => player.id === result.playerId);
 
         if(player){
             player.purchasesRemaining -= result.purchasesUsed;
@@ -135,7 +135,7 @@ export function isGameFinished(game) {
     if(game.mode === 'libre'){
         return game.players.some((player) => {
             //Obtener todos los resultados de ese jugador
-            const playerResults = game.hands.flatMap((hand) => hand.results.filter((result) => result.playerName === player.name));
+            const playerResults = game.hands.flatMap((hand) => hand.results.filter((result) => result.playerId === player.id));
 
             //Separamos solo los juegos completados
             const completedGames = playerResults.filter((result) => result.completedGameCode !== null);
@@ -177,7 +177,7 @@ export function getGameWinners(game) {
     */
     else if(game.mode === 'libre'){
         candidates = game.players.filter((player) => {
-            const results = getPlayerResults(game, player.name);
+            const results = getPlayerResults(game, player.id);
 
             const completedGameCodes = results.filter((result) => result.completedGameCode !== null).map((result) => result.completedGameCode);
 
@@ -194,8 +194,8 @@ export function getGameWinners(game) {
     }
 
     //Calcular el menor puntaje entre los candidatos
-    const lowestScore = Math.min(...candidates.map((player) => getPlayerTotal(game, player.name)));
+    const lowestScore = Math.min(...candidates.map((player) => getPlayerTotal(game, player.id)));
 
     //Devolver todos los jugadores que tiene ese puntaje mínimo 
-    return candidates.filter((player) => getPlayerTotal(game, player.name) === lowestScore);
+    return candidates.filter((player) => getPlayerTotal(game, player.id) === lowestScore);
 }
