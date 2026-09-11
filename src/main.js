@@ -25,6 +25,12 @@ import { createPlayerResult, validatePlayerResult, saveHandResults, validateHand
 //Importar la generación de Ids
 import { generatePlayerId } from './utils/playerId';
 
+//Importar la creación de una nueva partida
+import { createNextGame } from './utils/newGameFlow';
+
+//DATOS DE PRUEBA
+import { createFinishedTestGame } from './utils/testData';
+
 //Pantallas de la aplicación.
 import { renderHome } from './pages/home';
 import { renderCreateGame } from './pages/createGame';
@@ -488,11 +494,22 @@ function showFinalResults() {
   //Renderizar la pantalla final
   app.innerHTML = renderFinalResults(game, winners);
 
-  //Fucnionalidad del botón para revisar los resultados
+  //Funcionalidad del botón para revisar los resultados
   const btnVolverTabla = document.querySelector('#btnVolverTabla');
 
   btnVolverTabla.addEventListener('click', () => {
     showGame();
+  });
+
+  //Funcionalidad del botón para crear una nueva partida
+  const btnNuevaPartida = document.querySelector('#btnNuevaPartida');
+
+  btnNuevaPartida.addEventListener('click', () => {
+    const newGame = createNextGame(game, winners);
+
+    appState.currentGame = newGame;
+
+    showLobby();
   });
 }
 
@@ -525,3 +542,6 @@ function ocultarError(elemento) {
   Cuando el navegador carga el proyecto, se muestra Home.
 */
 showHome();
+
+//appState.currentGame = createFinishedTestGame();
+//showFinalResults();

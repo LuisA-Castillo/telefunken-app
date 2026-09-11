@@ -97,6 +97,10 @@ export function renderFinalResults(game, winners) {
         <button type="button" class="btn btn-outline-secondary w-100 mt-4" id="btnVolverTabla">
             Ver tabla final
         </button>
+
+        <button id="btnNuevaPartida" class="btn btn-primary w-100 mt-3">
+            Nueva partida
+        </button>
     </div>
     `;
 }
