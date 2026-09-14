@@ -128,7 +128,7 @@ export function movePlayer(players, currentIndex, newIndex) {
 
   No permite eliminar al Host.
 */
-export function removePlayer(players, index) {
+export function removePlayer(players, index, hostPlayerId) {
     //Comprobamos que la posición existe
     if(index < 0 || index >= players.length) {
         return false;
@@ -138,7 +138,7 @@ export function removePlayer(players, index) {
     const player = players[index];
 
     //Control para que el Host no pueda eliminarse
-    if(player.isHost) {
+    if(player.id === hostPlayerId) {
         return false;
     }
 
@@ -184,3 +184,11 @@ export function arePurchasesAllowed(mode, currentHand) {
 
     return true;
 }
+
+//Lista de estados dentro de una partida
+export const GAME_STATUS = { 
+    LOBBY: 'lobby',
+    IN_PROGRESS: 'in_progress',
+    FINISHED: 'finished',
+    ABORTED: 'aborted',
+};

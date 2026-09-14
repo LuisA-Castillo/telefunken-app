@@ -2,7 +2,7 @@
 import 'bootstrap/dist/css/bootstrap.min.css';
 
 // Importar JavaScript de Bootstrap.
-import 'bootstrap';
+import { Modal } from 'bootstrap';
 
 // Importar estilos personalizados.
 import './styles/main.css';
@@ -14,7 +14,7 @@ import { appState } from './state/appState';
 import { generateGameCode } from './utils/gameCode';
 
 //Importar funciones de regla para gestionar jugadores
-import { canAddPlayer, getOrderedGame, movePlayer, removePlayer } from './utils/gameRules';
+import { GAME_STATUS, getOrderedGame, movePlayer, removePlayer } from './utils/gameRules';
 
 //Importar funciones para la inicialización del juego
 import { initializeGame } from './utils/gameSetup';
@@ -25,6 +25,21 @@ import { createPlayerResult, validatePlayerResult, saveHandResults, validateHand
 //Importar la generación de Ids
 import { generatePlayerId } from './utils/playerId';
 
+//Importar la creación de una nueva partida
+import { createNextGame } from './utils/newGameFlow';
+
+//DATOS DE PRUEBA
+//import { createFinishedTestGame } from './utils/testData';
+
+//Importar las funciones de finalización de una partida
+import { abortGame, finishGame } from './utils/gameLifecycle';
+
+//Importar las funciones para validar si un jugador puede salir de un juego
+import { canManageLobby, canJoinGame } from './utils/lobbyPermissions';
+
+//Importar las funciones para salir de un juego
+import { leaveLobby } from './utils/lobbyActions';
+
 //Pantallas de la aplicación.
 import { renderHome } from './pages/home';
 import { renderCreateGame } from './pages/createGame';
@@ -32,6 +47,7 @@ import { renderLobby } from './pages/lobby';
 import { renderGame } from './pages/game';
 import { renderHandResults } from './pages/handResults';
 import { renderFinalResults } from './pages/finalResults';
+import { renderAbortedGame } from './pages/abortedGame';
 
 /*
   Busco en index.html el elemento cuyo id es "app".
@@ -123,6 +139,8 @@ function showCreateGame() {
     //Almacenar la modalidad para redireccionar a la vista correspondiente
     const modalidad = modalidadSeleccionada.value;
 
+    //Generar una sola vez el id del anfitrión 
+    const hostPlayerId = generatePlayerId();
     /*
       Crear el objeto que representa
       la nueva partida.
@@ -133,16 +151,19 @@ function showCreateGame() {
       //modalidad seleccionada
       mode: modalidad,
       //nombre del anfitrión
-      host: nombre,
+      hostPlayerId: hostPlayerId,
+      //estado de la partida
+      status: GAME_STATUS.LOBBY,
       //el host es el primer jugador de  la partida
       players: [
         {
-          id: generatePlayerId(),
+          id: hostPlayerId,
           name: nombre,
-          isHost: true
         },
       ],
     };
+
+    appState.currentPlayerId = hostPlayerId;
 
     //Una vez creada la partida, direccionar al Lobby.
     showLobby();
@@ -170,8 +191,11 @@ function showLobby() {
     return;
   }
 
+  //Comprobamos si el jugador puede administrar el lobby
+  const playerCanManageLobby = canManageLobby(game, appState.currentPlayerId);
+
   //Renderizar el lobby usando los datos de la partida
-  app.innerHTML = renderLobby(game);
+  app.innerHTML = renderLobby(game, playerCanManageLobby);
 
   //Elementos TEMPORALES usados para simular que otro jugador se une a la partida.
   const nombreNuevoJugador = document.querySelector('#nombreNuevoJugador');
@@ -179,59 +203,63 @@ function showLobby() {
   const errorNuevoJugador = document.querySelector('#errorNuevoJugador');
 
   //Evento que permite simular la incorporación de un nuevo jugador.
-  btnAgregarJugador.addEventListener('click', () => {
-    //Obtenemos y limpiamos el nombre.
-    const nombre = nombreNuevoJugador.value.trim();
+  if(btnAgregarJugador){
+    btnAgregarJugador.addEventListener('click', () => {
+      //Obtenemos y limpiamos el nombre.
+      const nombre = nombreNuevoJugador.value.trim();
 
-    //Validamos que el nombre no esté vacío.
-    if (nombre === '') {
-      errorNuevoJugador.textContent = 'Ingresa el nombre del jugador.';
-      errorNuevoJugador.classList.remove('d-none');
-      return;
-    }
+      //Validamos que el nombre no esté vacío.
+      if (nombre === '') {
+        errorNuevoJugador.textContent = 'Ingresa el nombre del jugador.';
+        errorNuevoJugador.classList.remove('d-none');
+        return;
+      }
 
-    //Comprobamos que todavía exista espacio para otro jugador.
-    if (!canAddPlayer(game.players.length)) {
-      errorNuevoJugador.textContent = 'La partida ya tiene el máximo de 6 jugadores.';
-      errorNuevoJugador.classList.remove('d-none');
-      return;
-    }
+      //Comprobamos que todavía exista espacio para otro jugador.
+      if (!canJoinGame(game)) {
+        errorNuevoJugador.textContent = 'No es posible unirse a esta partida.';
+        errorNuevoJugador.classList.remove('d-none');
+        return;
+      }
 
-    //Ocultamos cualquier error anterior.
-    errorNuevoJugador.classList.add('d-none')
+      //Ocultamos cualquier error anterior.
+      errorNuevoJugador.classList.add('d-none')
 
-    //Comprobamos si ya existe un jugador con el mismo nombre.
-    //Convertimos ambos nombres a minúsculas para que "Beto" y "beto" se consideren iguales.
-    const playerAlreadyExists =
-      game.players.some((player) => {
-        return (
-          player.name.toLowerCase() === nombre.toLowerCase()
-        );
+      //Comprobamos si ya existe un jugador con el mismo nombre.
+      //Convertimos ambos nombres a minúsculas para que "Beto" y "beto" se consideren iguales.
+      const playerAlreadyExists =
+        game.players.some((player) => {
+          return (
+            player.name.toLowerCase() === nombre.toLowerCase()
+          );
+        });
+
+      if (playerAlreadyExists) {
+        errorNuevoJugador.textContent = 'Ya existe un jugador con ese nombre.';
+        errorNuevoJugador.classList.remove('d-none');
+        return;
+      }
+
+      //Añadimos el nuevo jugador al estado de la partida.
+      game.players.push({
+        id: generatePlayerId(),
+        name: nombre,
       });
 
-    if (playerAlreadyExists) {
-      errorNuevoJugador.textContent = 'Ya existe un jugador con ese nombre.';
-      errorNuevoJugador.classList.remove('d-none');
-      return;
-    }
+      //TEMPORAL
+      //appState.currentPlayerId = game.players[1].id;
 
-    //Añadimos el nuevo jugador al estado de la partida.
-    game.players.push({
-      id: generatePlayerId(),
-      name: nombre,
-      isHost: false,
+      /*
+        Volvemos a renderizar el Lobby.
+        Esto actualizará:
+        - la lista;
+        - el contador;
+        - el estado del botón Iniciar;
+        - el botón Agregar.
+      */
+      showLobby()
     });
-
-    /*
-      Volvemos a renderizar el Lobby.
-      Esto actualizará:
-      - la lista;
-      - el contador;
-      - el estado del botón Iniciar;
-      - el botón Agregar.
-    */
-    showLobby()
-  });
+  }
 
   //Obtener los botones de subir, bajar y eliminar para el orden de los jugadores
   const botonesSubir = document.querySelectorAll('.btn-subir');
@@ -282,7 +310,7 @@ function showLobby() {
       const index = Number(button.dataset.index);
 
       //Intentamos eliminarlo
-      const removed = removePlayer(game.players, index);
+      const removed = removePlayer(game.players, index, game.hostPlayerId);
 
       //Si no lo pudo eliminar no hacemos nada
       if(!removed){
@@ -297,14 +325,44 @@ function showLobby() {
   //Obtener el botón Iniciar partida
   const btnIniciarPartida = document.querySelector('#btnIniciarPartida');
 
-  //Evento para comprobar que el botón haga algo cuando esté habilitado
-  btnIniciarPartida.addEventListener('click', () => {
-    //Inicializar la partida
-    initializeGame(game);
+  if(btnIniciarPartida){
+    //Evento para comprobar que el botón haga algo cuando esté habilitado
+    btnIniciarPartida.addEventListener('click', () => {
+      //Inicializar la partida
+      initializeGame(game);
 
-    //Mostrar mesa
-    showGame();
-  });
+      //Mostrar mesa
+      showGame();
+    });
+  }
+
+  //Evento que permite salir del juego a un jugador mientras está en el lobby.
+  const btnSalirLobby = document.querySelector('#btnSalirLobby');
+
+  if(btnSalirLobby){
+    btnSalirLobby.addEventListener('click', () => {
+      const left = leaveLobby(game, appState.currentPlayerId);
+
+      if(!left){
+        return;
+      }
+
+      //Si ya no hay jugadores en la partida deja de existir la partida
+      if(game.players.length === 0){
+        appState.currentGame = null;
+        appState.currentPlayerId = null;
+
+        showHome();
+        return;
+      }
+
+      //El jugador ya abandonó la partida
+      appState.currentGame = null;
+      appState.currentPlayerId = null;
+
+      showHome();
+    });
+  }
 }
 
 /*
@@ -324,16 +382,16 @@ function showGame() {
   //Rederizamos la mesa
   app.innerHTML = renderGame(game);
 
-  //Obtener el botón para cerrar la mano
+  //Evento para finalizar la mano y registrar los resultados
   const btnFinalizarMano = document.querySelector('#btnFinalizarMano');
 
-  //Evento para finalizar la mano y registrar los resultados
   if(btnFinalizarMano){
     btnFinalizarMano.addEventListener('click', () => {
       showHandResults();
     });
   }
 
+  //Evento para ver resultados finales
   const btnVerResultadosFinales = document.querySelector('#btnVerResultadosFinales');
 
   if(btnVerResultadosFinales){
@@ -341,6 +399,34 @@ function showGame() {
       showFinalResults();
     });
   }
+
+  //Evento y modal para finalizar partida
+  const btnFinalizarPartida = document.querySelector('#btnFinalizarPartida');
+  const modalFinalizarPartida = document.querySelector('#modalFinalizarPartida');
+
+  const finalizarPartidaModal = new Modal(modalFinalizarPartida);
+
+  if(btnFinalizarPartida){
+    btnFinalizarPartida.addEventListener('click', () => {
+      finalizarPartidaModal.show();
+    });
+
+    //Confirmación del modal para finalizar partida
+    const btnConfirmarFinalizarPartida = document.querySelector('#btnConfirmarFinalizarPartida');
+
+    btnConfirmarFinalizarPartida.addEventListener('click', () => {
+      const aborted = abortGame(game, appState.currentPlayerId);
+
+      if(!aborted){
+        return;
+      }
+
+      finalizarPartidaModal.hide();
+
+      showAbortedGame();
+    });
+  }
+
 }
 
 /*
@@ -378,11 +464,11 @@ function showHandResults() {
   }
 
   const btnVolverJuego = document.querySelector('#btnVolverJuego');
-  const btnGuardarResultados = document.querySelector('#btnGuardarResultados');
-
   btnVolverJuego.addEventListener('click', () => {
     showGame();
   });
+
+  const btnGuardarResultados = document.querySelector('#btnGuardarResultados');
 
   btnGuardarResultados.addEventListener('click', () => {
     //Obtener motivo de la terminación de la mano
@@ -463,6 +549,8 @@ function showHandResults() {
 
     //Si terminó no se avanza de mano
     if(gameFinished){
+      finishGame(game);
+
       showFinalResults();
       return;
     }
@@ -476,7 +564,7 @@ function showHandResults() {
 }
 
 /*
-  Función que perimte mostra los  
+  Función que permite mostrar los  
   resultados finales y al o los ganadores.
 */
 function showFinalResults() {
@@ -488,10 +576,36 @@ function showFinalResults() {
   //Renderizar la pantalla final
   app.innerHTML = renderFinalResults(game, winners);
 
-  //Fucnionalidad del botón para revisar los resultados
+  //Funcionalidad del botón para revisar los resultados
   const btnVolverTabla = document.querySelector('#btnVolverTabla');
 
   btnVolverTabla.addEventListener('click', () => {
+    showGame();
+  });
+
+  //Funcionalidad del botón para crear una nueva partida
+  const btnNuevaPartida = document.querySelector('#btnNuevaPartida');
+
+  btnNuevaPartida.addEventListener('click', () => {
+    const newGame = createNextGame(game, winners);
+
+    appState.currentGame = newGame;
+
+    showLobby();
+  });
+}
+
+/*
+  Función que permite abortar una partida.
+*/
+function showAbortedGame() {
+  const game = appState.currentGame;
+
+  app.innerHTML = renderAbortedGame(game);
+
+  const btnVerPartidaInterrumpida = document.querySelector('#btnVerPartidaInterrumpida');
+
+  btnVerPartidaInterrumpida.addEventListener('click', () => {
     showGame();
   });
 }
@@ -525,3 +639,6 @@ function ocultarError(elemento) {
   Cuando el navegador carga el proyecto, se muestra Home.
 */
 showHome();
+
+//appState.currentGame = createFinishedTestGame();
+//showFinalResults();

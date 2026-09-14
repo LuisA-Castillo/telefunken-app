@@ -1,5 +1,5 @@
 //Importar funciones de las reglas del juego
-import { GAMES, getOrderedGame, arePurchasesAllowed } from '../utils/gameRules';
+import { GAME_STATUS, GAMES, getOrderedGame, arePurchasesAllowed } from '../utils/gameRules';
 
 //Importar funciones del calculo de puntajes
 import { getGameScore, getPenaltyScores, getMaxPenaltyCount, getPlayerTotal } from '../utils/gameTable';
@@ -171,9 +171,15 @@ export function renderGame(game) {
         <!-- Finalizar la mano -->
         <section class="mt-4">
             ${!gameFinished ? `
-                <button type="button" class="btn btn-primary btn-lg w-100" id="btnFinalizarMano">
-                    Finalizar mano
-                </button>
+                ${game.status === GAME_STATUS.IN_PROGRESS ? `
+                    <button type="button" class="btn btn-primary btn-lg w-100" id="btnFinalizarMano">
+                        Finalizar mano
+                    </button>
+
+                    <button type="button" class="btn btn-outline-danger w-100 mt-4" id="btnFinalizarPartida">
+                        Finalizar partida
+                    </button>
+                `: ''}
             ` : `
                 <div class="alert alert-success text-center mb-0">
                     Partida finalizada
@@ -184,6 +190,41 @@ export function renderGame(game) {
                 </button>
             `}
         </section>
+
+        <!-- Modal para finalizar partida -->
+        <div class="modal fade" id="modalFinalizarPartida" tabindex="-1" aria-labelledby="modalFinalizarPartidaLabel" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="modalFinalizarPartidaLabel">
+                            Finalizar Partida
+                        </h5>
+
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                    </div>
+
+                    <div class="modal-body">
+                        <p>
+                            ¿Está seguro de finalizar esta partida?
+                        </p>
+
+                        <p class="mb-0 text-secondary">
+                            La partida se conservará en el historial, pero no será tomada en cuenta para las estadísticas.
+                        </p>
+                    </div>
+
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                            Continuar jugando
+                        </button>
+
+                        <button type="button" class="btn btn-danger" id="btnConfirmarFinalizarPartida">
+                            Finalizar partida
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
     </main>
     `;
 }

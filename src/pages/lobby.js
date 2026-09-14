@@ -4,7 +4,9 @@
   Recibe un objeto game con los datos
   de la partida actual.
 */
-export function renderLobby(game) {
+export function renderLobby(game, playerCanManageLobby) {
+    const hostPlayer = game.players.find((player) => player.id === game.hostPlayerId);
+    
     return `
     <main class="container py-4">
         <section class="mx-auto" style="max-width: 600px;">
@@ -39,7 +41,7 @@ export function renderLobby(game) {
                             Anfitrión:
                         </strong>
 
-                        ${game.host}
+                        ${hostPlayer?.name ?? ''}
                     </p>
                 </div>
             </div>
@@ -67,8 +69,9 @@ export function renderLobby(game) {
                                     ${index === 0 ? '<small class="text-secondary ms-2">Primer repartidor</small>' : ''}
                                 </span>
 
-                                ${player.isHost ? '<span class="badge text-bg-primary">Anfitrión</span>' : ''} 
+                                ${player.id === game.hostPlayerId ? '<span class="badge text-bg-primary">Anfitrión</span>' : ''} 
 
+                                ${playerCanManageLobby ? `
                                 <!-- Controles de orden -->
                                 <div class="btn-group btn-group-sm">
                                     <button type="button" class="btn btn-outline-secondary btn-subir" data-index="${index}" ${index === 0 ? 'disabled' : ''} aria-label="Subir ${player.name}">
@@ -79,10 +82,11 @@ export function renderLobby(game) {
                                         ↓
                                     </button>
 
-                                    <button type="button" class="btn btn-outline-danger btn-eliminar" data-index="${index}" ${player.isHost ? 'disabled' : ''} aria-label="Eliminar ${player.name}">
+                                    <button type="button" class="btn btn-outline-danger btn-eliminar" data-index="${index}" ${player.id === game.hostPlayerId ? 'disabled' : ''} aria-label="Eliminar ${player.name}">
                                         ×
                                     </button>
                                 </div>
+                                `: ''}
                             </div>
                         </div>
                         `).join('')}
@@ -94,55 +98,41 @@ export function renderLobby(game) {
                 El primer jugador de la lista será el primer repartidor.
             </div>
 
+            ${playerCanManageLobby ? `
             <!-- Simulación temporal para añadir jugadores -->
             <div class="card mb-4">
+                <div class="card-body">
 
-            <div class="card-body">
+                    <h2 class="h5">
+                    Simular ingreso de jugador
+                    </h2>
 
-                <h2 class="h5">
-                Simular ingreso de jugador
-                </h2>
+                    <p class="text-secondary">
+                    Esta sección es temporal.
+                    Más adelante cada jugador ingresará desde su propio dispositivo.
+                    </p>
 
-                <p class="text-secondary">
-                Esta sección es temporal.
-                Más adelante cada jugador ingresará desde su propio dispositivo.
-                </p>
+                    <div class="input-group">
+                        <input type="text" class="form-control" id="nombreNuevoJugador" placeholder="Nombre del jugador" maxlength="20">
 
-                <div class="input-group">
+                        <button type="button" class="btn btn-outline-primary" id="btnAgregarJugador" ${game.players.length >= 6 ? 'disabled' : ''}>
+                            Agregar
+                        </button>
+                    </div>
 
-                <input
-                    type="text"
-                    class="form-control"
-                    id="nombreNuevoJugador"
-                    placeholder="Nombre del jugador"
-                    maxlength="20"
-                >
-
-                <button
-                    type="button"
-                    class="btn btn-outline-primary"
-                    id="btnAgregarJugador"
-                    ${game.players.length >= 6 ? 'disabled' : ''}
-                >
-                    Agregar
-                </button>
-
+                    <div class="text-danger small mt-2 d-none" id="errorNuevoJugador">
+                    </div>
                 </div>
-
-                <div
-                class="text-danger small mt-2 d-none"
-                id="errorNuevoJugador"
-                >
-                </div>
-
             </div>
+            `: ''}
 
-            </div>
-
+            ${playerCanManageLobby ? `
             <!-- Botón iniciar -->
             <button type="button" class="btn btn-primary btn-lg w-100" id="btnIniciarPartida" ${game.players.length < 2 ? 'disabled' : ''}>
                 Iniciar partida
             </button>
+            `: ''}
+            
 
             <!-- Mensaje mientras faltan jugadores -->
             ${game.players.length < 2 ? `
@@ -150,6 +140,10 @@ export function renderLobby(game) {
                     Se necesita al menos 2 jugadores.
                 </p>
                 ` : ''}
+            
+            <button type="button" class="btn btn-outline-secondary w-100 mt-3" id="btnSalirLobby">
+                Salir del lobby
+            </button>
         </section>
     </main>
     `;
