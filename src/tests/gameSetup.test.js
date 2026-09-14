@@ -3,6 +3,7 @@ import { describe, expect, test } from 'vitest';
 
 //Importar las funciones que se van a probar
 import { initializeGame } from '../utils/gameSetup';
+import { GAME_STATUS } from '../utils/gameRules';
 
 /*
   Pruebas para inicializar un juego.
@@ -14,16 +15,17 @@ describe('Game initialization', () => {
             players: [
                 {
                     name: 'Beto',
-                    isHost: true
                 },
                 {
                     name: 'Mel',
-                    isHost: false
                 },
             ],
         };
 
         initializeGame(game);
+
+        //Es estado de la partida debe ser in_progress
+        expect(game.status).toBe(GAME_STATUS.IN_PROGRESS);
 
         //Se debe inicializar la partida
         expect(game.currentHand).toBe(1);
@@ -46,11 +48,9 @@ describe('Game initialization', () => {
             players: [
                 {
                     name: 'Beto',
-                    isHost: true
                 },
                 {
                     name: 'Mel',
-                    isHost: false
                 },
             ],
         };

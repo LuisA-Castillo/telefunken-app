@@ -113,20 +113,17 @@ describe('Removing players', () => {
     const players = [
       {
         name: 'Beto',
-        isHost: true
       },
       {
         name: 'Mel',
-        isHost: false
       },
       {
         name: 'Techi',
-        isHost: false
       },
     ];
 
     //Eliminar a Mel
-    const result = removePlayer(players, 1);
+    const result = removePlayer(players, 1, 'player-beto');
 
     //La operación debe ser exitosa, debe devolver true
     expect(result).toBe(true);
@@ -138,16 +135,16 @@ describe('Removing players', () => {
   test('does not remove the host', () => {
     const players = [
       {
+        id: 'player-beto',
         name: 'Beto',
-        isHost: true
       },
       {
+        id: 'player-mel',
         name: 'Mel',
-        isHost: false
       },
     ];
     
-    const result = removePlayer(players, 0);
+    const result = removePlayer(players, 0, 'player-beto');
 
     expect(result).toBe(false);
 
@@ -158,11 +155,10 @@ describe('Removing players', () => {
     const players = [
       {
         name: 'Beto',
-        isHost: true
       },
     ];
 
-    const result = removePlayer(players, 5);
+    const result = removePlayer(players, 5, 'player-beto');
 
     expect(result).toBe(false);
   });

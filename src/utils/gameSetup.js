@@ -1,6 +1,9 @@
 //Importar la función que determina las compras iniciales según la modalidad
 import { getInitialPurchases } from './gameRules';
 
+//Importar los estados de la partida
+import { GAME_STATUS } from './gameRules';
+
 /*
   Función que inicializa los datos 
   necesarios cuando una partida comienza.
@@ -14,6 +17,9 @@ export function initializeGame(game) {
 
     //Indicar que la partida ya inició
     game.started = true;
+
+    //Indicar el estado inicial de la partida
+    game.status = GAME_STATUS.IN_PROGRESS;
 
     //La primera mano
     game.currentHand = 1;

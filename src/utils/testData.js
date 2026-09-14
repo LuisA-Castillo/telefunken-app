@@ -2,7 +2,7 @@ export function createFinishedTestGame() {
   return {
     code: 'TELE-TEST',
     mode: 'ordenado',
-    host: 'Beto',
+    hostPlayerId: 'player-beto',
     status: 'finished',
     started: true,
     currentHand: 7,
@@ -12,7 +12,6 @@ export function createFinishedTestGame() {
       {
         id: 'player-beto',
         name: 'Beto',
-        isHost: true,
         purchasesRemaining: 3,
         totalScore: 0,
         completedGames: [],
@@ -21,7 +20,6 @@ export function createFinishedTestGame() {
       {
         id: 'player-mel',
         name: 'Mel',
-        isHost: false,
         purchasesRemaining: 2,
         totalScore: 0,
         completedGames: [],
@@ -30,7 +28,6 @@ export function createFinishedTestGame() {
       {
         id: 'player-luigi',
         name: 'Luigi',
-        isHost: false,
         purchasesRemaining: 1,
         totalScore: 0,
         completedGames: [],
@@ -39,7 +36,6 @@ export function createFinishedTestGame() {
       {
         id: 'player-ana',
         name: 'Ana',
-        isHost: false,
         purchasesRemaining: 4,
         totalScore: 0,
         completedGames: [],
@@ -48,7 +44,6 @@ export function createFinishedTestGame() {
       {
         id: 'player-carlos',
         name: 'Carlos',
-        isHost: false,
         purchasesRemaining: 0,
         totalScore: 0,
         completedGames: [],

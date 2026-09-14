@@ -1,4 +1,4 @@
-import { getInitialPurchases } from './gameRules';
+import { getInitialPurchases, GAME_STATUS } from './gameRules';
 import { generateGameCode } from './gameCode';
 /*
   Función que toma al ganador de la partida
@@ -36,8 +36,8 @@ export function createNextGame(previousGame, winners) {
     return {
         code: generateGameCode(),
         mode: previousGame.mode,
-        host: previousGame.host,
-        status: 'lobby',
+        hostPlayerId: previousGame.hostPlayerId,
+        status: GAME_STATUS.LOBBY,
         started: false,
         currentHand: 0,
         dealerIndex: 0,

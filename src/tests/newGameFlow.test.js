@@ -1,8 +1,9 @@
 //Importar las herramientas de Vitest para las pruebas
-import { createExpect, describe, expect, test } from 'vitest';
+import { describe, expect, test } from 'vitest';
 
 //Importar las funciones que se van a probar
 import { createNextGame } from '../utils/newGameFlow';
+import { GAME_STATUS } from '../utils/gameRules';
 
 /*
   Pruebas para la creación de un nuevo juego
@@ -12,7 +13,7 @@ describe('New game flow', () => {
     test('creates a new game rotating players from the first winner', () => {
         const previousGame = {
             code: 'TELE-1111',
-            mode: 'ordered',
+            mode: 'ordenado',
             status: 'finished',
             started: true,
             currentHand: 7,
@@ -21,7 +22,6 @@ describe('New game flow', () => {
                 {
                     id: 'player-beto',
                     name: 'Beto',
-                    isHost: true,
                     purchasesRemaining: 0,
                     totalScore: 120,
                     completedGames: ['1/3'],
@@ -30,7 +30,6 @@ describe('New game flow', () => {
                 {
                     id: 'player-mel',
                     name: 'Mel',
-                    isHost: false,
                     purchasesRemaining: 1,
                     totalScore: 95,
                     completedGames: ['1/3'],
@@ -39,7 +38,6 @@ describe('New game flow', () => {
                 {
                     id: 'player-luigi',
                     name: 'Luigi',
-                    isHost: false,
                     purchasesRemaining: 2,
                     totalScore: 80,
                     completedGames: ['1/3'],
@@ -48,7 +46,6 @@ describe('New game flow', () => {
                 {
                     id: 'player-ana',
                     name: 'Ana',
-                    isHost: false,
                     purchasesRemaining: 3,
                     totalScore: 140,
                     completedGames: ['1/3'],
@@ -57,7 +54,6 @@ describe('New game flow', () => {
                 {
                     id: 'player-carlos',
                     name: 'Carlos',
-                    isHost: false,
                     purchasesRemaining: 4,
                     totalScore: 160,
                     completedGames: ['1/3'],
@@ -83,7 +79,7 @@ describe('New game flow', () => {
 
     test('uses the tied winner who appeared first in the previous seating order', () => {
         const previousGame = {
-            mode: 'ordered',
+            mode: 'ordenado',
             players: [
                 {
                     id: 'player-beto',
@@ -117,27 +113,24 @@ describe('New game flow', () => {
 
     test('keeps the same host in the new game', () => {
         const previousGame = {
-            mode: 'ordered',
+            mode: 'ordenado',
+            hostPlayerId: 'player-beto',
             players: [
                 {
                     id: 'player-beto',
                     name: 'Beto',
-                    isHost: true,
                 },
                 {
                     id: 'player-mel',
                     name: 'Mel',
-                    isHost: false,
                 },
                 {
                     id: 'player-luigi',
                     name: 'Luigi',
-                    isHost: false,
                 },
                 {
                     id: 'player-ana',
                     name: 'Ana',
-                    isHost: false,
                 },
             ],
             hands: [],
@@ -149,9 +142,7 @@ describe('New game flow', () => {
 
         const newGame = createNextGame(previousGame, winners);
 
-        const host = newGame.players.find((player) => player.isHost);
-
-        expect(host.id).toBe('player-beto');
+        expect(newGame.hostPlayerId).toBe('player-beto');
     });
 
     test('resets game-specific player data', () => {
@@ -161,7 +152,6 @@ describe('New game flow', () => {
                 {
                     id: 'player-beto',
                     name: 'Beto',
-                    isHost: true,
                     purchasesRemaining: 2,
                     totalScore: 150,
                     completedGames: [
@@ -176,7 +166,6 @@ describe('New game flow', () => {
                 {
                     id: 'player-mel',
                     name: 'Mel',
-                    isHost: false,
                     purchasesRemaining: 0,
                     totalScore: 80,
                     completedGames: [
@@ -213,7 +202,6 @@ describe('New game flow', () => {
                 {
                     id: 'player-beto',
                     name: 'Beto',
-                    isHost: true,
                     purchasesRemaining: 3,
                     totalScore: 120,
                     completedGames: [
@@ -226,7 +214,6 @@ describe('New game flow', () => {
                 {
                     id: 'player-mel',
                     name: 'Mel',
-                    isHost: false,
                     purchasesRemaining: 1,
                     totalScore: 80,
                     completedGames: [
@@ -279,12 +266,10 @@ describe('New game flow', () => {
                 {
                     id: 'player-beto',
                     name: 'Beto',
-                    isHost: true,
                 },
                 {
                     id: 'player-mel',
                     name: 'Mel',
-                    isHost: false,
                 },
             ],
             hands: [
@@ -299,7 +284,7 @@ describe('New game flow', () => {
 
         const newGame = createNextGame(previousGame, winners);
 
-        expect(newGame.status).toBe('lobby');
+        expect(newGame.status).toBe(GAME_STATUS.LOBBY);
 
         expect(newGame.started).toBe(false);
 
@@ -343,7 +328,6 @@ describe('New game flow', () => {
                 {
                     id: 'player-beto',
                     name: 'Beto',
-                    isHost: true,
                     purchasesRemaining: 0,
                     totalScore: 200,
                     completedGames: [
@@ -359,7 +343,6 @@ describe('New game flow', () => {
                 {
                     id: 'player-mel',
                     name: 'Mel',
-                    isHost: false,
                     purchasesRemaining: 1,
                     totalScore: 150,
                     completedGames: [
@@ -413,20 +396,18 @@ describe('New game flow', () => {
         expect(newGame.mode).toBe('libre');
     });
 
-    test('keeps the host property in the new game', () => {
+    test('keeps the hostPlayerId property in the new game', () => {
         const previousGame = {
             mode: 'ordenado',
-            host: 'Beto',
+            hostPlayerId: 'player-beto',
             players: [
                 {
                     id: 'player-beto',
                     name: 'Beto',
-                    isHost: true,
                 },
                 {
                     id: 'player-mel',
                     name: 'Mel',
-                    isHost: false,
                 },
             ],
             hands: [],
@@ -436,6 +417,6 @@ describe('New game flow', () => {
 
         const newGame = createNextGame(previousGame, winners);
 
-        expect(newGame.host).toBe('Beto');
+        expect(newGame.hostPlayerId).toBe('player-beto');
     });
 });
