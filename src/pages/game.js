@@ -7,7 +7,7 @@ import { getGameScore, getPenaltyScores, getMaxPenaltyCount, getPlayerTotal } fr
 //Importar función de finalización del juego
 import { isGameFinished } from '../utils/handResults';
 
-//Renderizar la pantalla principal
+//Renderizar la pantalla principal donde se muestra la tabla de jugadores y sus manos
 export function renderGame(game) {
     //Obtenemos al repartidor actual usando dealerIndex
     const dealer = game.players[game.dealerIndex];

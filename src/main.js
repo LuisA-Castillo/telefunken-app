@@ -40,6 +40,12 @@ import { canManageLobby, canJoinGame } from './utils/lobbyPermissions';
 //Importar las funciones para salir de un juego
 import { leaveLobby } from './utils/lobbyActions';
 
+//Importar las funciones para gestionar una partida en firestore
+import { addPlayerToGame, createGameInFirestore, deleteGame, deletePlayerFromGame, findGameByCode, getGameById, getPlayersFromGame, subscribeToGame, subscribeToGamePlayers, updateGameHost, updatePlayersOrder } from './services/gameRepository';
+
+//Importar las funciones para manejar la sesión local
+import { clearSession, loadSession, saveSession } from './services/sessionStorage';
+
 //Pantallas de la aplicación.
 import { renderHome } from './pages/home';
 import { renderCreateGame } from './pages/createGame';
@@ -48,12 +54,67 @@ import { renderGame } from './pages/game';
 import { renderHandResults } from './pages/handResults';
 import { renderFinalResults } from './pages/finalResults';
 import { renderAbortedGame } from './pages/abortedGame';
+import { renderJoinGame } from './pages/joinGame';
+import { documentId } from 'firebase/firestore';
 
 /*
-  Busco en index.html el elemento cuyo id es "app".
+  Buscar en index.html el elemento cuyo id es "app".
   Este elemento será el contenedor principal de nuestra aplicación.
 */
 const app = document.querySelector('#app');
+
+/*
+  Mantener una referencia al listener
+  de jugadores actualmente activo.
+
+  Esto permite evitar crear múltiples
+  listeners para la misma partida.
+*/
+let unsubscribePlayerListener = null;
+
+//Guardar el id de la partida cuyo lobby estamos escuchando actualmente
+let listeningGameId = null;
+
+/*
+  Función para detener la escucha en tiempo 
+  real de los jugadores del lobby.
+
+  Esta función se utilizará cuando:
+  - abandonemos el lobby;
+  - iniciemos la partida;
+  - cambiemos a otra partida.
+*/
+function stopPlayersListener() {
+  //Comprobar si existe actualmente una suscripción activa
+  if(unsubscribePlayerListener) {
+    //Ejecutar la función de firestore para detener onSnapshot()
+    unsubscribePlayerListener();
+    
+    //Limpiar las referencias locales
+    unsubscribePlayerListener = null;
+    listeningGameId = null;
+  }
+}
+
+/*
+  Mantener una referencia al listener
+  del juego actualmente activo.
+*/
+let unsubscribeGameListener = null;
+let listeningGameDocumentId = null;
+
+/*
+  Funcion para detener la escucha en tiempo real
+  del documento principal de la partida.
+*/
+function stopGameListener() {
+  if(unsubscribeGameListener){
+    unsubscribeGameListener();
+
+    unsubscribeGameListener = null;
+    listeningGameDocumentId = null;
+  }
+}
 
 /*
   Función para mostrar la pantalla de Inicio.
@@ -63,9 +124,6 @@ function showHome() {
   //Insertar el HTML generado por renderHome().
   app.innerHTML = renderHome();
 
-  // Obtener referencia al botón "Crear partida".
-  const btnCrearPartida = document.querySelector('#btnCrearPartida');
-
   // Obtener referencia al botón "Unirme".
   const btnUnirse = document.querySelector('#btnUnirse');
 
@@ -73,7 +131,9 @@ function showHome() {
   const codigoPartida = document.querySelector('#codigoPartida');
 
 
-  // Escuchar evento click del botón Crear partida.
+  // Evento para redirigir a la pantalla de creación de una partida.
+  const btnCrearPartida = document.querySelector('#btnCrearPartida');
+
   btnCrearPartida.addEventListener('click', () => {
 
     // Al pulsar Crear partida, mostramos la pantalla correspondiente.
@@ -82,15 +142,50 @@ function showHome() {
   });
 
 
-  // Escuchar evento click del botón Unirme.
-  btnUnirse.addEventListener('click', () => {
+  //Escuchar evento click del botón Unirme.
+  btnUnirse.addEventListener('click', async () => {
 
-    // Obtener el texto escrito por el usuario.
-    const codigo = codigoPartida.value;
+    //Obtener el texto escrito por el usuario.
+    const codigo = codigoPartida.value.trim().toUpperCase();
 
-    // Mostrar temporalmente el código.
-    alert(`Código ingresado: ${codigo}`);
+    //Validar que se haya ingresado un código.
+    if(codigo === ''){
+      alert('Ingresa el código de la partida');
+      return;
+    }
 
+    try {
+      //Buscar la partida en firestore
+      const foundGame = await findGameByCode(codigo);
+
+      //Si no existe, informar al usuario
+      if(!foundGame){
+        alert('No existe una partida con ese código');
+        return;
+      }
+
+      //Solo se puede ingresar a una partida mientras esté en estado LOBBY
+      if(foundGame.status !== GAME_STATUS.LOBBY){
+        alert('Esta partida ya comenzó y no acepta nuevos jugadores.');
+        return;
+      }
+
+      //Recuperar los jugadores de la partida
+      //Los jugadores están almacenados en la subcolección: games/{gameId}/players
+      const players = await getPlayersFromGame(foundGame.id);
+
+      //Agregar temporalemnte los jugadores al objeto recuperado
+      foundGame.players = players;
+
+      //Mostrar pantalla en la que el jugador ingresa su nombre
+      showJoinGame(foundGame);
+    } catch (error) {
+      //Informar al jugador de manera técnica sobre el error
+      console.error('Error al buscar partida', error);
+
+      //Mensaje para el usuario
+      alert('No fue posible buscar la partida');
+    }
   });
 }
 
@@ -98,23 +193,17 @@ function showHome() {
   Función para mostrar la pantalla Crear partida.
 */
 function showCreateGame() {
-
   //Insertar el HTML generado por renderCreateGame().
   app.innerHTML = renderCreateGame();
 
-  
-  //Obtener los elementos de la pantalla.
-  const btnVolverInicio = document.querySelector('#btnVolverInicio');
-
-  const btnCrear = document.querySelector('#btnCrear');
-
+  //Obtener los elementos para la interacción
   const nombreAnfitrion = document.querySelector('#nombreAnfitrion');
-
-  const mensajeError = document.querySelector('#mensajeError');
-
+  const mensajeError = document.querySelector('#mensajeError'); 
 
   //Evento para Crear partida.
-  btnCrear.addEventListener('click', () => {
+  const btnCrear = document.querySelector('#btnCrear');
+
+  btnCrear.addEventListener('click', async () => {
     //Obtener el nombre del anfitrión desde el input y le quitamos todos los espacios al inicio y al final
     const nombre = nombreAnfitrion.value.trim();
 
@@ -163,13 +252,46 @@ function showCreateGame() {
       ],
     };
 
-    appState.currentPlayerId = hostPlayerId;
+    //Intentar guardar la nueva partida dentro de firebase
+    try{
+      //Deshabilitar temporalmente el botón para evitar crear varias partidas mientras Firebase está procesando la solicitud.
+      btnCrear.disabled = true;
+      btnCrear.textContent = 'Creando partida...';
 
-    //Una vez creada la partida, direccionar al Lobby.
-    showLobby();
+      //Enviar la partida al repositorio
+      const gameId = await createGameInFirestore(appState.currentGame);
+
+      //Guardar el identificador interno de Firestore dentro del estado temporal de la aplicación.
+      appState.currentGameId = gameId;
+      appState.currentPlayerId = hostPlayerId;
+
+      //Guarda la identidad del anfitrión en este dispositivo
+      saveSession(gameId, hostPlayerId);
+
+      //Obtener a jugador anfitrión
+      const hostPlayer = appState.currentGame.players.find((player) => player.id === hostPlayerId);
+
+      //Guardar al anfitrión dentro de la subcolección players.
+      await addPlayerToGame(gameId, hostPlayer, 0);
+
+      //Redirigir al lobby una vez que se ha guardado la partida y el anfitrión
+      showLobby();
+    } catch(error) {
+      //Si ocurrió un error, volver a habilitar el botón para permitir otro intento.
+      btnCrear.disabled = false;
+      btnCrear.textContent = 'Crear partida';
+
+      //Si ocurre un error mostrarlo en consola para poder solventarlo
+      console.error('Error al crear partida', error);
+
+      //Informar al usuario que no fue posible crear la partida
+      mostrarError(mensajeError, 'No se pudo crear la partida. Intenta nuevamente.');
+    }
   });
 
   //Evento para regresar a Inicio.
+  const btnVolverInicio = document.querySelector('#btnVolverInicio');
+  
   btnVolverInicio.addEventListener('click', () => {
 
     showHome();
@@ -191,6 +313,85 @@ function showLobby() {
     return;
   }
 
+  //Iniciar la escucha de jugadores solamente si todavía no existe listener para la partida
+  if(appState.currentGameId && listeningGameId !== appState.currentGameId) {
+    //Detener cauqluier listener de una partida anterior
+    stopPlayersListener();
+
+    //Registrar la partida que se va a escuchar
+    listeningGameId = appState.currentGameId;
+
+    //Escuchar los juegos en tiempo real
+    unsubscribePlayerListener = subscribeToGamePlayers(appState.currentGameId, (players) => {
+      //Comprobar si el jugador asociado a este dispositivo continúa perteneciendo a la partida
+      const currentPlayerExists = players.some((player) => player.id === appState.currentPlayerId);
+
+      //Si el jugador ya no existe se debe cerrar su sesión y sacarlo del lobby
+      if(!currentPlayerExists){
+        //Detener la escucha del lobby
+        stopPlayersListener();
+
+        //Eliminar la sesión
+        clearSession();
+
+        //Limpiar el estado actual
+        appState.currentGame = null;
+        appState.currentGameId = null;
+        appState.currentPlayerId = null;
+
+        //Regresar al inicio
+        showHome();
+
+        return;
+      }
+      
+      //Si el jugador todavía existe, actualizar el arreglo local
+      game.players = players;
+
+      //Renderizar el lobby
+      showLobby();
+    }, (error) => {
+      console.error('Error al sincronizar jugadores: ', error);
+    });
+  }
+
+  //Escuchar cambios generales de la partida únicamente si todavía existe un listener activo para esta misma partida
+  if(appState.currentGameId && listeningGameDocumentId !== appState.currentGameId){
+    stopGameListener();
+
+    listeningGameDocumentId = appState.currentGameId;
+
+    unsubscribeGameListener = subscribeToGame(appState.currentGameId, (updateGame) => {
+      if(!updateGame) {
+        stopGameListener();
+        stopPlayersListener();
+        
+        clearSession();
+
+        appState.currentGame = null;
+        appState.currentGameId = null;
+        appState.currentPlayerId = null;
+
+        showHome();
+
+        return;
+      }
+
+      //Actualizar únicamente los datos generales de la partida
+      game.code = updateGame.code;
+      game.mode = updateGame.mode;
+      game.hostPlayerId = updateGame.hostPlayerId;
+      game.status = updateGame.status;
+      game.currentHand = updateGame.currentHand;
+      game.dealerIndex = updateGame.dealerIndex;
+
+      //Volver a renderizar
+      showLobby();
+    }, (error) => {
+      console.error('Error al sincronizar la partida: ', error);
+    });
+  }
+
   //Comprobamos si el jugador puede administrar el lobby
   const playerCanManageLobby = canManageLobby(game, appState.currentPlayerId);
 
@@ -204,7 +405,7 @@ function showLobby() {
 
   //Evento que permite simular la incorporación de un nuevo jugador.
   if(btnAgregarJugador){
-    btnAgregarJugador.addEventListener('click', () => {
+    btnAgregarJugador.addEventListener('click', async () => {
       //Obtenemos y limpiamos el nombre.
       const nombre = nombreNuevoJugador.value.trim();
 
@@ -240,35 +441,45 @@ function showLobby() {
         return;
       }
 
-      //Añadimos el nuevo jugador al estado de la partida.
-      game.players.push({
-        id: generatePlayerId(),
-        name: nombre,
-      });
+      //generar identificador del nuevo jugador
+      const newPlayerId = generatePlayerId();
+
+      try {
+        //Posición del nuevo jugador corresponde a la cantidad actual de jugadores
+        const newPlayerOrder = game.players.length;
+
+        const newPlayer = {
+          id: newPlayerId,
+          name: nombre,
+        };
+
+        //Añadimos el nuevo jugador al estado local de la partida.
+        game.players.push(newPlayer);
+
+        //Guardar al jugador dentro de la subcolección. Renderiza el lobby
+        await addPlayerToGame(appState.currentGameId, newPlayer, newPlayerOrder);
+      } catch (error) {
+        //Si falla firestore, se elimina al jugador del arreglo local por sincronización
+        game.players = game.players.filter((player) => player.id !== newPlayer);
+
+        //Mostrar el error en consola
+        console.error('Error al agregar jugador: ', error);
+
+        //Informar al usuario
+        errorNuevoJugador.textContent = 'No se pudo agregar al jugador. Intenta nuevamente';
+        errorNuevoJugador.classList.remove('d-none');
+      }
 
       //TEMPORAL
       //appState.currentPlayerId = game.players[1].id;
-
-      /*
-        Volvemos a renderizar el Lobby.
-        Esto actualizará:
-        - la lista;
-        - el contador;
-        - el estado del botón Iniciar;
-        - el botón Agregar.
-      */
-      showLobby()
     });
   }
-
-  //Obtener los botones de subir, bajar y eliminar para el orden de los jugadores
-  const botonesSubir = document.querySelectorAll('.btn-subir');
-  const botonesBajar = document.querySelectorAll('.btn-bajar');
-  const botonesEliminar = document.querySelectorAll('.btn-eliminar')
   
   //Se añade eventos a cada botón de subir
+  const botonesSubir = document.querySelectorAll('.btn-subir');
+  
   botonesSubir.forEach((button) => {
-    button.addEventListener('click', () => {
+    button.addEventListener('click', async () => {
       /*
         dataset.index obtiene el valor
         almacenado en data-index.
@@ -284,14 +495,20 @@ function showLobby() {
       //Modificamos el orden
       movePlayer(game.players, currentIndex, newIndex);
 
-      //Volvemos a cargar le lobby con el nuevo orden
-      showLobby();
+      try {
+        //Guardar en firestore el nuevo orden del lobby. Recarga el lobby.
+        await updatePlayersOrder(appState.currentGameId, game.players);
+      } catch (error) {
+        console.error('Error al actualizar el orden: ', error);
+      }
     });
   });
 
   //Se añade eventos a cada botón de bajar
+  const botonesBajar = document.querySelectorAll('.btn-bajar');
+
   botonesBajar.forEach((button) => {
-    button.addEventListener('click', () => {
+    button.addEventListener('click', async () => {
       const currentIndex = Number(button.dataset.index);
 
       //Bajar significa avanzar una posición en el arreglo.
@@ -299,15 +516,28 @@ function showLobby() {
 
       movePlayer(game.players, currentIndex, newIndex);
 
-      showLobby();
+      try {
+        //Guardar en firestore el nuevo orden del lobby. Recarga el lobby.
+        await updatePlayersOrder(appState.currentGameId, game.players);
+      } catch (error) {
+        console.error('Error al actualizar el orden: ', error);
+      }
     });
   });
 
   //Se añade eventos a cada botón de eliminar
+  const botonesEliminar = document.querySelectorAll('.btn-eliminar');
+
   botonesEliminar.forEach((button) => {
-    button.addEventListener('click', () => {
+    button.addEventListener('click', async () => {
       //Obtenemos la posición del jugador
       const index = Number(button.dataset.index);
+
+      //Guardar una copia del arreglo actual
+      const previousPlayers = [...game.players];
+
+      //Guardar el jugador que ocupa la posición seleccionada
+      const playerToRemove = game.players[index];
 
       //Intentamos eliminarlo
       const removed = removePlayer(game.players, index, game.hostPlayerId);
@@ -317,8 +547,21 @@ function showLobby() {
         return;
       }
 
-      //Volvemos a renderizar el lobby
-      showLobby();
+      try {
+        //Eliminar al jugador de firestore
+        await deletePlayerFromGame(appState.currentGameId, playerToRemove.id);
+
+        //Al emiminar al jugador se deben cambiar las posiciones de los que estaban después. Recarga el lobby
+        await updatePlayersOrder(appState.currentGameId, game.players);
+      } catch (error) {
+        //Si firebase falla, restaura el arreglo local anterior
+        game.players = previousPlayers;
+
+        console.error('Error al eliminar jugador', error);
+
+        //Volvemos a renderizar el lobby
+        showLobby();
+      }
     });
   });
 
@@ -328,6 +571,9 @@ function showLobby() {
   if(btnIniciarPartida){
     //Evento para comprobar que el botón haga algo cuando esté habilitado
     btnIniciarPartida.addEventListener('click', () => {
+      //La unión al lobby queda cerrado cuando comienza la partida.
+      stopPlayersListener();
+
       //Inicializar la partida
       initializeGame(game);
 
@@ -340,27 +586,61 @@ function showLobby() {
   const btnSalirLobby = document.querySelector('#btnSalirLobby');
 
   if(btnSalirLobby){
-    btnSalirLobby.addEventListener('click', () => {
+    btnSalirLobby.addEventListener('click', async () => {
+      //Guardar los identificadores antes de modificar o limpiar
+      const leavingPlayerId = appState.currentPlayerId;
+      const gameId = appState.currentGameId;
+      
+      //Salida local
       const left = leaveLobby(game, appState.currentPlayerId);
 
       if(!left){
         return;
       }
 
-      //Si ya no hay jugadores en la partida deja de existir la partida
-      if(game.players.length === 0){
+      //El dispositivo está abandonando voluntariamente la partida
+      stopPlayersListener();
+      stopGameListener();
+
+      try {
+        //Eliminar de firestore
+        await deletePlayerFromGame(gameId, leavingPlayerId);
+
+        //Si ya no hay jugadores en la partida deja de existir la partida
+        if(game.players.length === 0){
+          //Eliminar el documento 
+          await deleteGame(gameId);
+          
+          //Limpiar sesión
+          clearSession();
+
+          //Limpiar el estado local
+          appState.currentGame = null;
+          appState.currentGameId = null;
+          appState.currentPlayerId = null;
+
+          showHome();
+          return;
+        }
+
+        //Si aún hay jugadores apuntar al nuevo anfitrión
+        await updateGameHost(gameId, game.hostPlayerId);
+
+        //Actualizar el orden
+        await updatePlayersOrder(gameId, game.players);
+
+        //Limpiar sesión
+        clearSession();
+
+        //Limpiar el estado local
         appState.currentGame = null;
+        appState.currentGameId = null;
         appState.currentPlayerId = null;
 
         showHome();
-        return;
+      } catch (error) {
+        console.error('Error al salir del lobby: ', error);
       }
-
-      //El jugador ya abandonó la partida
-      appState.currentGame = null;
-      appState.currentPlayerId = null;
-
-      showHome();
     });
   }
 }
@@ -599,15 +879,236 @@ function showFinalResults() {
   Función que permite abortar una partida.
 */
 function showAbortedGame() {
+  //Obtener el contexto actual
   const game = appState.currentGame;
 
+  //Renderizar la pantalla para abortar la partida
   app.innerHTML = renderAbortedGame(game);
 
+  //Funcionalidad del botón para abortar la partida
   const btnVerPartidaInterrumpida = document.querySelector('#btnVerPartidaInterrumpida');
 
   btnVerPartidaInterrumpida.addEventListener('click', () => {
     showGame();
   });
+}
+
+/*
+  Función que permite mostrar la pantalla 
+  que permite al jugador ingresar su nombre
+  antes de unirse a una partida.
+*/
+function showJoinGame(game) {
+  //Renderizar la pantalla 
+  app.innerHTML = renderJoinGame(game);
+
+  //Obtener elementos para interacción
+  const nombreJugador = document.querySelector('#nombreJugador');
+  const mensajeErrorJoin = document.querySelector('#mensajeErrorJoin');
+
+  //Funcionalidad del botón para volver al inicio sin hacer nada
+  const btnVolverInicio = document.querySelector('#btnVolverInicio');
+
+  btnVolverInicio.addEventListener('click', () => {
+    showHome();
+  });
+
+  //Funcionalidad del botón para unirse a la partida
+  const btnConfirmarUnion = document.querySelector('#btnConfirmarUnion');
+
+  btnConfirmarUnion.addEventListener('click', async () => {
+    const nombre = nombreJugador.value.trim();
+
+    //Validar que se jhaya ingresado un nombre
+    if(nombre === ''){
+      mensajeErrorJoin.textContent = 'Ingresa tu nombre para continuar.';
+      mensajeErrorJoin.classList.remove('d-none');
+      return;
+    }
+
+    //Ocultar todos los mensajes de error si todo esta correcto
+    mensajeErrorJoin.classList.add('d-none');
+
+    try {
+      //Deshabilitamos el botón mientras verificamos y registramos al jugador
+      btnConfirmarUnion.disabled = true;
+      btnConfirmarUnion.textContent = 'Uniéndote...';
+
+      //Consultar nuevamente el estado de la partida
+      const currentGame = await findGameByCode(game.code);
+
+      //Si la aprtida ya no existe no se puede continuar
+      if(!currentGame){
+        mensajeErrorJoin.textContent = 'La partida ya no está disponible.';
+        mensajeErrorJoin.classList.remove('d-none'); 
+        
+        return;
+      }
+
+      //Comprobar que la partida siga en estado lobby
+      if(currentGame.status !== GAME_STATUS.LOBBY){
+        mensajeErrorJoin.textContent = 'La partida ya comenzó y no acepta nuevos jugadores.';
+        mensajeErrorJoin.classList.remove('d-none');
+
+        btnConfirmarUnion.disabled = false;
+        btnConfirmarUnion.textContent = 'Unirme a la partida';
+
+        return;
+      }
+
+      //Recuperar nuevamente los jugadores
+      const currentPlayers = await getPlayersFromGame(currentGame.id);
+
+      //Verificar q todavía haya espacio en la partida
+      if(currentPlayers.length >= 6){
+        mensajeErrorJoin.textContent = 'La partida ya tiene el máximo de 6 jugadores.';
+        mensajeErrorJoin.classList.remove('d-none');
+
+        btnConfirmarUnion.disabled = false;
+        btnConfirmarUnion.textContent = 'Unirme a la partida';
+
+        return;
+      }
+
+      //Compribar si ya existe el jugador con ese nombre: Beto, beto, BETO, etc
+      const playerAlreadyExists = currentPlayers.some((player) => player.name.toLowerCase() === nombre.toLowerCase());
+
+      if(playerAlreadyExists){
+        mensajeErrorJoin.textContent = 'Ya existe un jugador con ese nombre.';
+        mensajeErrorJoin.classList.remove('d-none');
+
+        btnConfirmarUnion.disabled = false;
+        btnConfirmarUnion.textContent = 'Unirme a la partida';
+
+        return;
+      }
+
+      //Generar el id del jugador nuevo
+      const playerId = generatePlayerId();
+
+      //Generar el objeto del jugador con el formato de la app
+      const newPlayer = {
+        id: playerId,
+        name: nombre,
+      }
+
+      //Calcular la posición del nuevo jugador
+      const playerOrder = currentPlayers.length;
+
+      //Guardar al nuevo jugador en firestore
+      await addPlayerToGame(currentGame.id, newPlayer, playerOrder);
+
+      //Guardar el id de la partida q se creo en firestore
+      appState.currentGameId = currentGame.id;
+
+      //Asociar el dispositivo al jugador que ingresó
+      appState.currentPlayerId = playerId;
+
+      //Guardar la sesión del jugador que se acaba de unir
+      saveSession(currentGame.id, playerId);
+
+      //Añadir los jugadores al objeto de la partida
+      currentGame.players = [
+        ...currentPlayers,
+        newPlayer,
+      ];
+
+      //Guardar la partida como actual para este dispositivo
+      appState.currentGame = currentGame;
+
+      //Entrar al lobby
+      showLobby();
+    } catch (error) {
+      //Informar al jugador de manera técnica sobre el error
+      console.error('Error al unirse a la partida', error);
+
+      //Mostrar mensaje comprensible al jugador
+      mensajeErrorJoin.textContent = 'Ya existe un jugador con ese nombre.';
+      mensajeErrorJoin.classList.remove('d-none');
+
+      //Permitir un nuevo intento
+      btnConfirmarUnion.disabled = false;
+      btnConfirmarUnion.textContent = 'Unirme a la partida';
+    }
+  });
+}
+
+/*
+  Función para inicializar la aplicación.
+
+  Antes de mostrar Home comprobamos
+  si este navegador tenía una sesión
+  activa previamente.
+*/
+async function initializeApp(params) {
+  //Recuperar la sesión del localStorage
+  const session = loadSession();
+
+  //Si no existe, iniciar en el home
+  if(!session){
+    showHome();
+    return;
+  }
+
+  try {
+    //Recuperar la partida desde firebase
+    const game = await getGameById(session.gameId);
+
+    //Si la partida ya no existe limpiar la sesión
+    if(!game){
+      clearSession();
+      showHome();
+      return;
+    }
+
+    //Recuperar los jugadores actuales de la partida
+    const players = await getPlayersFromGame(session.gameId);
+
+    //Comporbar que el jugador de este dispositivo todavía se parte de la partida
+    const currentPlayerExists = players.some((player) => player.id === session.playerId);
+
+    //Si no pertenece, la sesión local dejó de ser válida
+    if(!currentPlayerExists){
+      clearSession();
+      showHome();
+      return;
+    }
+
+    //Reconstruir la partida local
+    game.players = players;
+
+    //Restaurar el estado de la app
+    appState.currentGame = game;
+    appState.currentGameId = session.gameId;
+    appState.currentPlayerId = session.playerId;
+
+    //Decidir qué pantalla corresponde según el estado actual de la partida
+    if(game.status === GAME_STATUS.LOBBY){
+      showLobby();
+      return;
+    }
+    if(game.status === GAME_STATUS.IN_PROGRESS){
+      showGame();
+      return;
+    }
+    if(game.status === GAME_STATUS.FINISHED){
+      showFinalResults();
+      return;
+    }
+    if(game.status === GAME_STATUS.ABORTED){
+      showAbortedGame();
+      return;
+    }
+
+    //Si se encuentra un estado unesperado, volver a home por seguridad
+    clearSession();
+    showHome();
+  } catch (error) {
+    console.error('Error al restaurar la sesión: ', error);
+
+    //Si firestore falla temporalmente se regresa al home TEMPORALMENTE 
+    showHome();
+  }
 }
 
 /*
@@ -634,11 +1135,12 @@ function ocultarError(elemento) {
 }
 
 /*
-  -- IMPORTANTE --
-  Punto de entrada visual de la aplicación.
-  Cuando el navegador carga el proyecto, se muestra Home.
+  Punto de entrada de la aplicación.
+
+  Primero intentamos recuperar
+  una sesión existente.
 */
-showHome();
+initializeApp();
 
 //appState.currentGame = createFinishedTestGame();
 //showFinalResults();

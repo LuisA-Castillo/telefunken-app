@@ -93,39 +93,6 @@ export function renderLobby(game, playerCanManageLobby) {
                 </div>
             </div>
 
-            <!-- Información sobre el orden -->
-            <div class="alert alert-light border">
-                El primer jugador de la lista será el primer repartidor.
-            </div>
-
-            ${playerCanManageLobby ? `
-            <!-- Simulación temporal para añadir jugadores -->
-            <div class="card mb-4">
-                <div class="card-body">
-
-                    <h2 class="h5">
-                    Simular ingreso de jugador
-                    </h2>
-
-                    <p class="text-secondary">
-                    Esta sección es temporal.
-                    Más adelante cada jugador ingresará desde su propio dispositivo.
-                    </p>
-
-                    <div class="input-group">
-                        <input type="text" class="form-control" id="nombreNuevoJugador" placeholder="Nombre del jugador" maxlength="20">
-
-                        <button type="button" class="btn btn-outline-primary" id="btnAgregarJugador" ${game.players.length >= 6 ? 'disabled' : ''}>
-                            Agregar
-                        </button>
-                    </div>
-
-                    <div class="text-danger small mt-2 d-none" id="errorNuevoJugador">
-                    </div>
-                </div>
-            </div>
-            `: ''}
-
             ${playerCanManageLobby ? `
             <!-- Botón iniciar -->
             <button type="button" class="btn btn-primary btn-lg w-100" id="btnIniciarPartida" ${game.players.length < 2 ? 'disabled' : ''}>
@@ -142,7 +109,7 @@ export function renderLobby(game, playerCanManageLobby) {
                 ` : ''}
             
             <button type="button" class="btn btn-outline-secondary w-100 mt-3" id="btnSalirLobby">
-                Salir del lobby
+                Salir del juego
             </button>
         </section>
     </main>
