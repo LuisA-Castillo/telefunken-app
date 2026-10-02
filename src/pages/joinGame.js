@@ -61,8 +61,8 @@ export function renderJoinGame(game){
             </div>
         </div>
 
-        <div class="mt-4">
-            <label for="nombreJugador" class="form-label">
+        <div class="mb-3">
+            <label for="nombreJugador" class="form-label mb-1">
                 Tu nombre
             </label>
 

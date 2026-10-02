@@ -59,3 +59,20 @@ body {
 .game-table {
   width: 100%;
 }
+
+.game-code-wrapper {
+  position: relative;
+}
+
+.game-code-prefix {
+  position: absolute;
+  left: 0.75rem;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 2;
+  pointer-events: none;
+}
+
+.game-code-input {
+  padding-left: 4.2rem;
+}

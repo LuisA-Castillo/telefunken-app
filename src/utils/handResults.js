@@ -20,7 +20,7 @@ export function createPlayerResult(playerId, completedGameCode, points, purchase
 */
 export function validatePlayerResult(completedGameCode, points, purchasesUsed, purchasesRemaining, gameCompleted) {
     //Puntos obligatorios y no negativos
-    if(points === '' || Number(points) < 0){
+    if(points === '' || Number(points) < 0 || Number(points) > 999){
         return false;
     }
 
@@ -49,7 +49,7 @@ export function validatePlayerResult(completedGameCode, points, purchasesUsed, p
 export function saveHandResults(game, endReason, results) {
     //Crear el objeto q representa la mano finalizada
     const hand = {
-        numbre: game.currentHand,
+        number: game.currentHand,
         dealerIndex: game.dealerIndex,
         endReason,
         results

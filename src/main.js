@@ -14,7 +14,7 @@ import { appState } from './state/appState';
 import { generateGameCode } from './utils/gameCode';
 
 //Importar funciones de regla para gestionar jugadores
-import { GAME_STATUS, getOrderedGame, movePlayer, removePlayer } from './utils/gameRules';
+import { GAME_STATUS, getInitialPurchases, getOrderedGame, movePlayer, removePlayer } from './utils/gameRules';
 
 //Importar funciones para la inicialización del juego
 import { initializeGame } from './utils/gameSetup';
@@ -41,10 +41,13 @@ import { canManageLobby, canJoinGame } from './utils/lobbyPermissions';
 import { leaveLobby } from './utils/lobbyActions';
 
 //Importar las funciones para gestionar una partida en firestore
-import { addPlayerToGame, createGameInFirestore, deleteGame, deletePlayerFromGame, findGameByCode, getGameById, getPlayersFromGame, subscribeToGame, subscribeToGamePlayers, updateGameHost, updatePlayersOrder } from './services/gameRepository';
+import { addPlayerToGame, createGameInFirestore, createHandInFirestore, deleteGame, deletePlayerFromGame, findGameByCode, getGameById, getHandsFromGame, getPlayersFromGame, saveHandResultsToFirebase, subscribeToGame, subscribeToGamePlayers, updateGameHost, updateGameState, updatePlayersOrder } from './services/gameRepository';
 
 //Importar las funciones para manejar la sesión local
 import { clearSession, loadSession, saveSession } from './services/sessionStorage';
+
+//Importar la generación de un código único
+import { generateUniqueGameCode } from './services/gameCodeService';
 
 //Pantallas de la aplicación.
 import { renderHome } from './pages/home';
@@ -55,7 +58,7 @@ import { renderHandResults } from './pages/handResults';
 import { renderFinalResults } from './pages/finalResults';
 import { renderAbortedGame } from './pages/abortedGame';
 import { renderJoinGame } from './pages/joinGame';
-import { documentId } from 'firebase/firestore';
+import { doc } from 'firebase/firestore';
 
 /*
   Buscar en index.html el elemento cuyo id es "app".
@@ -70,7 +73,7 @@ const app = document.querySelector('#app');
   Esto permite evitar crear múltiples
   listeners para la misma partida.
 */
-let unsubscribePlayerListener = null;
+let unsubscribePlayersListener = null;
 
 //Guardar el id de la partida cuyo lobby estamos escuchando actualmente
 let listeningGameId = null;
@@ -86,12 +89,12 @@ let listeningGameId = null;
 */
 function stopPlayersListener() {
   //Comprobar si existe actualmente una suscripción activa
-  if(unsubscribePlayerListener) {
+  if(unsubscribePlayersListener) {
     //Ejecutar la función de firestore para detener onSnapshot()
-    unsubscribePlayerListener();
+    unsubscribePlayersListener();
     
     //Limpiar las referencias locales
-    unsubscribePlayerListener = null;
+    unsubscribePlayersListener = null;
     listeningGameId = null;
   }
 }
@@ -130,6 +133,11 @@ function showHome() {
   // Obtener referencia al campo donde se escribe el código.
   const codigoPartida = document.querySelector('#codigoPartida');
 
+  //Evento para evitar que se ingrese caracteres no numéricos
+  codigoPartida.addEventListener('input', () => {
+      codigoPartida.value = codigoPartida.value.replace(/\D/g, '').slice(0, 4);
+    }
+  );
 
   // Evento para redirigir a la pantalla de creación de una partida.
   const btnCrearPartida = document.querySelector('#btnCrearPartida');
@@ -145,8 +153,18 @@ function showHome() {
   //Escuchar evento click del botón Unirme.
   btnUnirse.addEventListener('click', async () => {
 
+    //Obtener únicamente los digitos ingresados
+    const digits = codigoPartida.value.trim();
+
+    //Validar que sean exactamente 4 números
+    if(!/^\d{4}$/.test(digits)){
+      alert('Ingresa los 4 dígitos del código de partida.');
+
+      return;
+    }
+    
     //Obtener el texto escrito por el usuario.
-    const codigo = codigoPartida.value.trim().toUpperCase();
+    const codigo = `TELE-${digits}`;
 
     //Validar que se haya ingresado un código.
     if(codigo === ''){
@@ -230,13 +248,16 @@ function showCreateGame() {
 
     //Generar una sola vez el id del anfitrión 
     const hostPlayerId = generatePlayerId();
+
+    //Generar un código único
+    const gameCode = await generateUniqueGameCode();
     /*
       Crear el objeto que representa
       la nueva partida.
     */
     appState.currentGame = {
       //codigo identificador
-      code: generateGameCode(),
+      code: gameCode,
       //modalidad seleccionada
       mode: modalidad,
       //nombre del anfitrión
@@ -322,7 +343,7 @@ function showLobby() {
     listeningGameId = appState.currentGameId;
 
     //Escuchar los juegos en tiempo real
-    unsubscribePlayerListener = subscribeToGamePlayers(appState.currentGameId, (players) => {
+    unsubscribePlayersListener = subscribeToGamePlayers(appState.currentGameId, (players) => {
       //Comprobar si el jugador asociado a este dispositivo continúa perteneciendo a la partida
       const currentPlayerExists = players.some((player) => player.id === appState.currentPlayerId);
 
@@ -346,7 +367,14 @@ function showLobby() {
       }
       
       //Si el jugador todavía existe, actualizar el arreglo local
-      game.players = players;
+      game.players = players.map((player) => {
+        const existingPlayer = game.players.find((currentPlayer) => currentPlayer.id === player.id);
+
+        return{
+          ...existingPlayer,
+          ...player,
+        };
+      });
 
       //Renderizar el lobby
       showLobby();
@@ -377,6 +405,9 @@ function showLobby() {
         return;
       }
 
+      //Guardar estado anterior antes de actualizar
+      const previousStatus = game.status;
+
       //Actualizar únicamente los datos generales de la partida
       game.code = updateGame.code;
       game.mode = updateGame.mode;
@@ -385,8 +416,25 @@ function showLobby() {
       game.currentHand = updateGame.currentHand;
       game.dealerIndex = updateGame.dealerIndex;
 
-      //Volver a renderizar
-      showLobby();
+      //Si la partida acaba de pasar de lobby a in_progress, este dispositivo debe entrar a la mesa
+      if(previousStatus === GAME_STATUS.LOBBY && game.status === GAME_STATUS.IN_PROGRESS){
+        //Ya no se necesita escuchar cambios de lobby
+        stopPlayersListener();
+
+        //Inicializardatos locales
+        initializeGame(game);
+
+        //Mostrar mesa automáticamente
+        showGame();
+
+        return;
+      }
+
+      //Si continua siendo lobby
+      if(game.status === GAME_STATUS.LOBBY){
+        showLobby();
+        return;
+      }
     }, (error) => {
       console.error('Error al sincronizar la partida: ', error);
     });
@@ -397,83 +445,6 @@ function showLobby() {
 
   //Renderizar el lobby usando los datos de la partida
   app.innerHTML = renderLobby(game, playerCanManageLobby);
-
-  //Elementos TEMPORALES usados para simular que otro jugador se une a la partida.
-  const nombreNuevoJugador = document.querySelector('#nombreNuevoJugador');
-  const btnAgregarJugador = document.querySelector('#btnAgregarJugador');
-  const errorNuevoJugador = document.querySelector('#errorNuevoJugador');
-
-  //Evento que permite simular la incorporación de un nuevo jugador.
-  if(btnAgregarJugador){
-    btnAgregarJugador.addEventListener('click', async () => {
-      //Obtenemos y limpiamos el nombre.
-      const nombre = nombreNuevoJugador.value.trim();
-
-      //Validamos que el nombre no esté vacío.
-      if (nombre === '') {
-        errorNuevoJugador.textContent = 'Ingresa el nombre del jugador.';
-        errorNuevoJugador.classList.remove('d-none');
-        return;
-      }
-
-      //Comprobamos que todavía exista espacio para otro jugador.
-      if (!canJoinGame(game)) {
-        errorNuevoJugador.textContent = 'No es posible unirse a esta partida.';
-        errorNuevoJugador.classList.remove('d-none');
-        return;
-      }
-
-      //Ocultamos cualquier error anterior.
-      errorNuevoJugador.classList.add('d-none')
-
-      //Comprobamos si ya existe un jugador con el mismo nombre.
-      //Convertimos ambos nombres a minúsculas para que "Beto" y "beto" se consideren iguales.
-      const playerAlreadyExists =
-        game.players.some((player) => {
-          return (
-            player.name.toLowerCase() === nombre.toLowerCase()
-          );
-        });
-
-      if (playerAlreadyExists) {
-        errorNuevoJugador.textContent = 'Ya existe un jugador con ese nombre.';
-        errorNuevoJugador.classList.remove('d-none');
-        return;
-      }
-
-      //generar identificador del nuevo jugador
-      const newPlayerId = generatePlayerId();
-
-      try {
-        //Posición del nuevo jugador corresponde a la cantidad actual de jugadores
-        const newPlayerOrder = game.players.length;
-
-        const newPlayer = {
-          id: newPlayerId,
-          name: nombre,
-        };
-
-        //Añadimos el nuevo jugador al estado local de la partida.
-        game.players.push(newPlayer);
-
-        //Guardar al jugador dentro de la subcolección. Renderiza el lobby
-        await addPlayerToGame(appState.currentGameId, newPlayer, newPlayerOrder);
-      } catch (error) {
-        //Si falla firestore, se elimina al jugador del arreglo local por sincronización
-        game.players = game.players.filter((player) => player.id !== newPlayer);
-
-        //Mostrar el error en consola
-        console.error('Error al agregar jugador: ', error);
-
-        //Informar al usuario
-        errorNuevoJugador.textContent = 'No se pudo agregar al jugador. Intenta nuevamente';
-        errorNuevoJugador.classList.remove('d-none');
-      }
-
-      //TEMPORAL
-      //appState.currentPlayerId = game.players[1].id;
-    });
-  }
   
   //Se añade eventos a cada botón de subir
   const botonesSubir = document.querySelectorAll('.btn-subir');
@@ -570,15 +541,22 @@ function showLobby() {
 
   if(btnIniciarPartida){
     //Evento para comprobar que el botón haga algo cuando esté habilitado
-    btnIniciarPartida.addEventListener('click', () => {
+    btnIniciarPartida.addEventListener('click', async () => {
       //La unión al lobby queda cerrado cuando comienza la partida.
       stopPlayersListener();
 
-      //Inicializar la partida
+      //Inicializar la partida localmente
       initializeGame(game);
 
-      //Mostrar mesa
-      showGame();
+      try {
+        //Guardar en firestore el nuevo estado de la partida
+        await updateGameState(appState.currentGameId, game);
+
+        //Mostrar la mesa despúes de persistir el estado
+        showGame();
+      } catch (error) {
+        console.error('Error al iniciar la partida: ', error);
+      }
     });
   }
 
@@ -659,15 +637,65 @@ function showGame() {
     return;
   }
 
+  //Comprobar si este dispositivo pertenece al anfitrión
+  const playerIsHost = appState.currentPlayerId === game.hostPlayerId;
+
   //Rederizamos la mesa
-  app.innerHTML = renderGame(game);
+  app.innerHTML = renderGame(game, playerIsHost);
 
   //Evento para finalizar la mano y registrar los resultados
   const btnFinalizarMano = document.querySelector('#btnFinalizarMano');
 
+  //Obtener los elementos del modal para finalizar la mano
+  const modalFinalizarMano = document.querySelector('#modalFinalizarMano');
+
+  const finalizarManoModal = modalFinalizarMano ? new Modal(modalFinalizarMano) : null;
+
   if(btnFinalizarMano){
     btnFinalizarMano.addEventListener('click', () => {
-      showHandResults();
+      //Mostrar el modal para que el host defina como finalizó la mano
+      finalizarManoModal.show();
+    });
+
+    const btnConfirmarFinalizarMano = document.querySelector('#btnConfirmarFinalizarMano');
+
+    const errorFinalizarMano = document.querySelector('#errorFinalizarMano');
+
+    btnConfirmarFinalizarMano.addEventListener('click', async () => {
+      //Obtener la causa seleccionada
+      const endReasonInput = document.querySelector('input[name="endReason"]:checked');
+
+      //Causa obligatoria
+      if(!endReasonInput){
+        errorFinalizarMano.textContent = 'Selecciona cómo terminó la partida';
+
+        errorFinalizarMano.classList.remove('d-none');
+
+        return;
+      }
+
+      //Ocultar errores anteriores
+      errorFinalizarMano.classList.add('d-none');
+
+      //Construir los datos generales de la mano
+      const hand = {
+        number: game.currentHand,
+        dealerIndex: game.dealerIndex,
+        endReason: endReasonInput.value,
+      };
+
+      //Intentar crear en Firestore: games/{gameId}/hands/hand-N con estado collecting_results.
+      try {
+        await createHandInFirestore(appState.currentGameId, hand);
+
+        //Cerrar el modal
+        finalizarManoModal.hide();
+      } catch (error) {
+        console.error('Error al finalizar la mano: ', error);
+        errorFinalizarMano.textContent = 'No fue posible finalizar la mano.';
+
+        errorFinalizarMano.classList.remove('d-none');
+      }
     });
   }
 
@@ -750,7 +778,7 @@ function showHandResults() {
 
   const btnGuardarResultados = document.querySelector('#btnGuardarResultados');
 
-  btnGuardarResultados.addEventListener('click', () => {
+  btnGuardarResultados.addEventListener('click', async () => {
     //Obtener motivo de la terminación de la mano
     const endReasonInput = document.querySelector('input[name="endReason"]:checked');
 
@@ -824,6 +852,24 @@ function showHandResults() {
     //Todos los jugadores tienen resultados válidos y podemos guardar la mano
     saveHandResults(game, endReasonInput.value, results);
 
+    //Recuperar la mano que se agregó localmente
+    const savedHand = game.hands[game.hands.length - 1];
+
+    console.log(
+      'Mano guardada localmente:',
+      savedHand
+    );
+
+    try {
+      //Crear el documento general de la mano
+      const handId = await createHandInFirestore(appState.currentGameId, savedHand);
+
+      //Guardar el resultado en la subcolección results
+      await saveHandResultsToFirebase(appState.currentGameId, handId, results);
+    } catch (error) {
+      console.error('Error al guardar la mano en firestore: ', error);
+    }
+
     //Verificar si el juego ha finalizado
     const gameFinished = isGameFinished(game);
 
@@ -838,8 +884,15 @@ function showHandResults() {
     //Si aún continua la partida, se prepara la siguiente mano
     advanceToNextHand(game);
 
-    //Regresar a la tabla para visualizar resultados
-    showGame();
+    try {
+      //Persistir en firestore el nuevo estado de la partida
+      await updateGameState(appState.currentGameId, game);
+
+      //Mostrar la tabla únicamente despues de guardar el avance de la mano
+      showGame();
+    } catch (error) {
+      console.error('Error al avanzar a la siguiente mano: ', error);
+    }
   });
 }
 
@@ -1074,8 +1127,29 @@ async function initializeApp(params) {
       return;
     }
 
+    //Recuperar las manos previamente registradas
+    const hands = await getHandsFromGame(session.gameId);
+
+    //Obtener la cantidad inicial de compras de la modalidad
+    const initialPurchases = getInitialPurchases(game.mode);
+
+    //Reconstruir las compras restantes de cada jugador
+    players.forEach((player) => {
+      //Obtener todos los resultados registrados
+      const playerResults = hands.flatMap((hand) => hand.results).filter((result) => result.playerId === player.id);
+
+      //Calcular cuántas compras ha utilizado
+      const purchasesUsed = playerResults.reduce((total, result) => total + result.purchasesUsed, 0);
+
+      //Reconstruir las compras restantes
+      player.purchasesRemaining = initialPurchases - purchasesUsed;
+    });
+
     //Reconstruir la partida local
     game.players = players;
+
+    //Reconstruir las manos 
+    game.hands = hands;
 
     //Restaurar el estado de la app
     appState.currentGame = game;

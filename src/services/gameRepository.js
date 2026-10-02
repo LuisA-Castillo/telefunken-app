@@ -261,7 +261,7 @@ export async function findGameByCode(gameCode) {
   //Obtener una referencia a la colección principal
   const gamesCollection = collection(db, 'games');
 
-  //Crear una consultaque busque los documentos que coincidan con el "code" ingresado
+  //Crear una consulta que busque los documentos que coincidan con el "code" ingresado
   const gameQuery = query(gamesCollection, where('code', '==', gameCode), limit(1));
 
   //Ejecutar consulta
@@ -324,7 +324,7 @@ export function subscribeToGame(gameId, onGameChanged, onError) {
   const unsubscribe = onSnapshot(gameDocument, (snapshot) => {
     //Si la partida deja de existir devolver null
     if(!snapshot.exists()){
-      onGameChanged = null;
+      onGameChanged(null);
       return;
     }
 
@@ -373,4 +373,173 @@ export async function deleteGame(gameId) {
 
   //Eliminar documento principal
   await deleteDoc(gameDocument);
+}
+
+/*
+  Función para comprobar si ya existe una 
+  partida utilizando un código específico.
+*/
+export async function gameCodeExists(gameCode) {
+  //Obtener una referencia a la colección principal
+  const gamesCollection = collection(db, 'games');
+
+  //Crear una consulta que busque los documentos que coincidan con el "code" ingresado
+  const gameQuery = query(gamesCollection, where('code', '==', gameCode), limit(1));
+
+  const snapshot = await getDocs(gameQuery);
+
+  return !snapshot.empty;
+}
+
+/*
+  Función para crear o actualizar la 
+  mano actual dentro de Firestore.
+
+  Utilizamos un identificador determinístico:
+
+  hand-1
+  hand-2
+  hand-3
+
+  Esto evita crear duplicados si existe
+  un doble clic, una recarga o un reintento.
+*/
+export async function createHandInFirestore(gameId, hand) {
+  //Construir el identificador que corresponde a la mano
+  const handId = `hand-${hand.number}`;
+
+  //Crear referencia a: games/{gameId}/hands/{handId}
+  const handDocument = doc(db, 'games', gameId, 'hands', handId)
+
+  //Guardar la información general de la mano. La mano pasa a estado de espera 
+  await setDoc(handDocument, {
+    number: hand.number,
+    dealerIndex: hand.dealerIndex,
+    endReason: hand.endReason,
+    //Estado que indica la finalización de la mano pero esta esperando los resultados
+    status: 'collecting_results',
+    createdAt: serverTimestamp(),
+  });
+
+  //Devolver el id generado por firestore
+  return handId;
+}
+
+/*
+  Función para guardar el resultado individual
+  de un jugador dentro de una mano.
+
+  Se almacenará en:
+
+  games/{gameId}/hands/{handId}/results/{playerId}
+*/
+export async function saveHandResult(gameId, handId, result) {
+  //Obtener referencia al documento del resultado del jugador
+  const resultDocument = doc(db, 'games', gameId, 'hands', handId, 'results',result.playerId);
+
+  //Guardar el resultado usando player Id
+  await setDoc(resultDocument, {
+    //Código del juego completado
+    completedGameCode: result.completedGameCode,
+    //Puntaje registrado al finalizar la mano
+    points: result.points,
+    //Compras utilizadas
+    purchasesUsed: result.purchasesUsed,
+    //Fecha del registro
+    createdAt: serverTimestamp(),
+  });
+}
+
+/*
+  Función para guardar todos los resultados
+  correspondientes a una mano.
+
+  Esta función reutiliza saveHandResult()
+  para cada jugador.
+*/
+export async function saveHandResultsToFirebase(gameId, handId, results) {
+  //Recorrer los resultados uno por uno
+  for(const result of results){
+    await saveHandResult(gameId, handId, result);
+  }
+}
+
+/*
+  Función para actualizar los datos 
+  generales de una partida en Firestore.
+
+  Esta función permitirá mantener
+  sincronizados datos como:
+
+  - status
+  - currentHand
+  - dealerIndex
+*/
+export async function updateGameState(gameId, game) {
+  //Crear referencia al documento
+  const gameDocument = doc(db, 'games', gameId);
+
+  //Actualizar los campos relacionados con el estado de la partida
+  await updateDoc(gameDocument, {
+    status: game.status,
+    currentHand: game.currentHand,
+    dealerIndex: game.dealerIndex,
+  });
+}
+
+/*
+  Función para recuperar todos los resultados
+  pertenecientes a una mano.
+
+  Los resultados se encuentran en:
+
+  games/{gameId}/hands/{handId}/results
+*/
+export async function getHandResults(gameId, handId) {
+  //Obtener referencia a la subcolección de resultados de la mano
+  const resultsCollection = collection(db, 'games', gameId, 'hands', handId, 'results');
+
+  //Recuperar todos los resultados
+  const snapshot = await getDocs(resultsCollection);
+
+  //Devolver el formato usado por la app
+  return snapshot.docs.map((document) => ({
+    playerId: document.id,
+    completedGameCode: document.data().completedGameCode,
+    points: document.data().points,
+    purchasesUsed: document.data().purchasesUsed,
+  }));
+}
+
+/*
+  Función para recuperar todas las manos guardadas
+  de una partida respetando su número.
+*/
+export async function getHandsFromGame(gameId) {
+  //Obtener referencia a la colección de las manos del juego
+  const handsCollection = collection(db, 'games', gameId, 'hands');
+
+  //Las manos se recuperan en orden cronológico
+  const handsQuery = query(handsCollection, orderBy('number'));
+
+  const snapshot = await getDocs(handsQuery);
+
+  const hands = [];
+
+  //Por cada mano se recupera sus resultados
+  for(const document of snapshot.docs){
+    const handData = document.data();
+
+    const results = await getHandResults(gameId, document.id);
+
+    //Reconstruir la estructura de la lógica local
+    hands.push({
+      number: handData.number,
+      dealerIndex: handData.dealerIndex,
+      endReason: handData.endReason,
+      results: results
+    });
+  }
+  
+  return hands;
 }

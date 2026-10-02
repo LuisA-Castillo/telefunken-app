@@ -37,11 +37,18 @@ export function renderHome() {
             
             <!-- Campo para ingresar el código de la partida -->
             <div class="mb-3">
-                <label for="codigoPartida" class="form-label">
+                <label for="codigoPartida" class="form-label mb-1">
                     Código de partida
                 </label>
-                <input type="text" class="form-control form-control-lg text-uppercase" id="codigoPartida" placeholder="Ej. TELE-4821">
+
+                <div class="game-code-wrapper">
+                    <span class="game-code-prefix">
+                        TELE-
+                    </span>
+                    <input type="text" class="form-control game-code-input" id="codigoPartida" placeholder="4821" maxlength="4" inputmode="numeric" autocomplete="off">
+                </div>
             </div>
+            
 
             <!-- Botón para unirse -->
             <button type="button" class="btn btn-outline-primary btn-lg w-100" id="btnUnirse">

@@ -20,7 +20,7 @@ function renderOrderedPlayerResult(player, currentGame, purchasesAllowed) {
                 Puntos
             </label>
 
-            <input type="number" id="points-${player.name}" class="form-control" min="0" step="1" inputmode="numeric">
+            <input type="number" id="points-${player.name}" class="form-control" min="0" step="1" inputmode="numeric" max="999">
         </div>
 
         <!-- Compras utilizadas -->
@@ -109,7 +109,7 @@ function renderFreePlayerResult(game, player) {
                 Puntos
             </label>
 
-            <input type="number" class="form-control" id="points-${player.name}" min="0" step="1" inputmode="numeric">
+            <input type="number" class="form-control" id="points-${player.name}" min="0" step="1" inputmode="numeric" max="999">
         </div>
 
         <!-- Compras utiizadas -->
