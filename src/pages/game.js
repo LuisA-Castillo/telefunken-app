@@ -8,7 +8,7 @@ import { getGameScore, getPenaltyScores, getMaxPenaltyCount, getPlayerTotal } fr
 import { isGameFinished } from '../utils/handResults';
 
 //Renderizar la pantalla principal donde se muestra la tabla de jugadores y sus manos
-export function renderGame(game, playerIsHost) {
+export function renderGame(game, playerIsHost, readOnly = false) {
     //Obtenemos al repartidor actual usando dealerIndex
     const dealer = game.players[game.dealerIndex];
 
@@ -23,6 +23,19 @@ export function renderGame(game, playerIsHost) {
 
     //Verificamos si el juego ha finalizado
     const gameFinished = isGameFinished(game);
+
+    const readOnlyNavigation = readOnly ? `
+    <div class="alert alert-secondary mt-4">
+        Esta partida ya finalizó.
+        La tabla se muestra únicamente para consulta.
+    </div>
+
+    <div class="d-grid mt-3">
+        <button type="button" class="btn btn-outline-secondary" id="btnVolverPartidaFinalizada">
+        Volver
+        </button>
+    </div>
+    ` : '';
 
     return `
     <main class="container-fluid py-3">
@@ -168,23 +181,29 @@ export function renderGame(game, playerIsHost) {
             </div>
         </section>
 
+        ${readOnlyNavigation}
+
         <!-- Finalizar la mano -->
         <section class="mt-4">
             ${!gameFinished ? `
                 ${game.status === GAME_STATUS.IN_PROGRESS ? `
-                    ${playerIsHost ? `
-                        <button type="button" class="btn btn-primary btn-lg w-100 mb-3" id="btnFinalizarMano">
-                            Finalizar mano
-                        </button>
-
-                        <button type="button" class="btn btn-outline-danger btn-lg w-100" id="btnFinalizarPartida">
-                            Finalizar partida
-                        </button>
-                    ` : `
-                        <div class="alert alert-secondary text-center mb-0">
-                            Esperando a que el anfitrión finalice la mano...
+                    ${readOnly ? `
+                        <div class="alert alert-secondary">
+                            Esta partida ya finalizó. La tabla se muestra en modo consulta.
                         </div>
-                    `}
+                    ` : playerIsHost ? `
+                            <button type="button" class="btn btn-primary btn-lg w-100 mb-3" id="btnFinalizarMano">
+                                Finalizar mano
+                            </button>
+
+                            <button type="button" class="btn btn-outline-danger btn-lg w-100" id="btnFinalizarPartida">
+                                Finalizar partida
+                            </button>
+                        ` : `
+                            <div class="alert alert-secondary text-center mb-0">
+                                Esperando a que el anfitrión finalice la mano...
+                            </div>
+                            `}
                 `: ''}
             ` : `
                 <div class="alert alert-success text-center mb-0">

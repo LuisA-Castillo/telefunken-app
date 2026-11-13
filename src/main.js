@@ -389,19 +389,24 @@ function showLobby() {
 
     listeningGameDocumentId = appState.currentGameId;
 
+    //Escuchar cambios del documento principal de la partida
     unsubscribeGameListener = subscribeToGame(appState.currentGameId, (updateGame) => {
+      //Si la partida fue eliminada de firestore, limpia sesión y vuelve al inicio
       if(!updateGame) {
+        //Detener listeners activos
         stopGameListener();
         stopPlayersListener();
         
+        //Eliminar la sesión almacenada
         clearSession();
 
+        //Limpiar el estado temporal
         appState.currentGame = null;
         appState.currentGameId = null;
         appState.currentPlayerId = null;
 
+        //Regresar al inicio
         showHome();
-
         return;
       }
 
@@ -416,6 +421,47 @@ function showLobby() {
       game.currentHand = updateGame.currentHand;
       game.dealerIndex = updateGame.dealerIndex;
 
+      /*
+        ------------------------------------------------
+        PARTIDA ABORTADA
+        ------------------------------------------------
+
+        Si cualquier dispositivo detecta que
+        Firestore cambió el estado a ABORTED,
+        debe salir automáticamente de la mesa.
+      */
+      if(game.status === GAME_STATUS.ABORTED){
+        //Ya no se necesita escuchar cambios de la partida activa
+        stopPlayersListener();
+        //Detener el listener principal porque la partida terminó
+        stopGameListener();
+        //Mostrar la pantalla de partida finalizada
+        showAbortedGame();
+        return; 
+      }
+
+       /*
+        ------------------------------------------------
+        PARTIDA FINALIZADA NORMALMENTE
+        ------------------------------------------------
+
+        Dejamos preparado también este caso porque
+        más adelante, cuando alguien gane, todos los
+        dispositivos deben recibir el cambio.
+      */
+      if(game.status === GAME_STATUS.FINISHED){
+        stopPlayersListener();
+        stopGameListener();
+
+        showFinalResults();
+        return;
+      } 
+      
+      /*
+        ------------------------------------------------
+        LOBBY → PARTIDA
+        ------------------------------------------------
+      */
       //Si la partida acaba de pasar de lobby a in_progress, este dispositivo debe entrar a la mesa
       if(previousStatus === GAME_STATUS.LOBBY && game.status === GAME_STATUS.IN_PROGRESS){
         //Ya no se necesita escuchar cambios de lobby
@@ -627,7 +673,7 @@ function showLobby() {
   Función que muestra la pantalla 
   principal de la partida, la tabla de anotaciones.
 */
-function showGame() {
+function showGame(readOnly = false) {
   //Recuperamos la partida actual
   const game = appState.currentGame;
 
@@ -638,10 +684,61 @@ function showGame() {
   }
 
   //Comprobar si este dispositivo pertenece al anfitrión
-  const playerIsHost = appState.currentPlayerId === game.hostPlayerId;
+  const currentplayerIsHost = appState.currentPlayerId === game.hostPlayerId;
 
-  //Rederizamos la mesa
-  app.innerHTML = renderGame(game, playerIsHost);
+  //El jugador solo tiene privilegios de host en la partida q es editable
+  const playerIsHost = currentplayerIsHost && !readOnly;
+
+  //Rederizamos la mesa indicando que estamos consultando una partida que ya no se puede modificar
+  app.innerHTML = renderGame(game, playerIsHost, readOnly);
+
+  /*
+    ------------------------------------------------
+    MODO SOLO LECTURA
+    ------------------------------------------------
+
+    Si estamos consultando una partida que ya
+    terminó, solamente necesitamos permitir
+    regresar a la pantalla correspondiente.
+
+    No queremos conectar los eventos normales
+    de una partida activa.
+  */
+  if(readOnly){
+    //Funcionalidad del botón Volver a partida finalizada
+    const btnVolverPartidaFinalizada = document.querySelector('#btnVolverPartidaFinalizada');
+
+    if(btnVolverPartidaFinalizada){
+      btnVolverPartidaFinalizada.addEventListener('click', () => {
+        //Si la partida fue interrumpida, se regresa a la pantalla de partida interrumpida
+        if(game.status === GAME_STATUS.ABORTED){
+          showAbortedGame();
+          return;
+        }
+
+        //Si la partida terminó, regreso a los resultados finales
+        if(game.status === GAME_STATUS.FINISHED){
+          showFinalResults();
+          return;
+        }
+      });
+    }
+    /*
+      MUY IMPORTANTE:
+
+      Estamos viendo una tabla de solo lectura.
+
+      No queremos continuar ejecutando el resto
+      de showGame(), porque más abajo se conectan
+      eventos como:
+
+      - finalizar mano;
+      - finalizar partida;
+      - otros controles propios de una partida
+        activa.
+    */
+    return;
+  }
 
   //Evento para finalizar la mano y registrar los resultados
   const btnFinalizarMano = document.querySelector('#btnFinalizarMano');
@@ -722,16 +819,38 @@ function showGame() {
     //Confirmación del modal para finalizar partida
     const btnConfirmarFinalizarPartida = document.querySelector('#btnConfirmarFinalizarPartida');
 
-    btnConfirmarFinalizarPartida.addEventListener('click', () => {
+    btnConfirmarFinalizarPartida.addEventListener('click', async () => {
+      //Aplicar la lógica de finalización sobre el objeto local de la partida
       const aborted = abortGame(game, appState.currentPlayerId);
 
-      if(!aborted){
+      //Si abortGame() devuelve false, la partida no pudo finalizarse
+      if(!aborted) {
         return;
       }
 
-      finalizarPartidaModal.hide();
+      try {
+        //Persistir en firebase el nuevo estado de la partida
+        await updateGameState(appState.currentGameId, game);
+        
+        //Cerrar el modal únicamente después de guardar en Firestore
+        finalizarPartidaModal.hide();
 
-      showAbortedGame();
+        //Mostrar la pantalla de una partida interrumpida
+        showAbortedGame();
+      } catch (error) {
+        //Registrar el error técnico 
+        console.error('Error al finalizar la partida: ', error);
+
+        /*
+          Por ahora utilizamos alert porque
+          todavía no tenemos un contenedor
+          de error específico en este modal.
+
+          Más adelante podemos reemplazarlo
+          por un alert de Bootstrap.
+        */
+        alert('No fue posible finalizar la partida.');
+      }
     });
   }
 
@@ -935,15 +1054,43 @@ function showAbortedGame() {
   //Obtener el contexto actual
   const game = appState.currentGame;
 
-  //Renderizar la pantalla para abortar la partida
+  //Si no existe una partida vuelve al inicio
+  if(!game){
+    showHome();
+    return;
+  }
+
+  //Renderizar la pantalla de partida abortada
   app.innerHTML = renderAbortedGame(game);
 
-  //Funcionalidad del botón para abortar la partida
+  //Funcionalidad del botón para ver partida (tabla) abortada
   const btnVerPartidaInterrumpida = document.querySelector('#btnVerPartidaInterrumpida');
 
   btnVerPartidaInterrumpida.addEventListener('click', () => {
-    showGame();
+    showGame(true);
   });
+
+  //Funcionalidad del botón para abandonar la sesión e ir al inicio
+  const btnVolverInicio = document.querySelector('#btnVolverInicio');
+
+  if(btnVolverInicio){
+    btnVolverInicio.addEventListener('click', () => {
+      //Detener listeners para abandonar la partida
+      stopPlayersListener();
+      stopGameListener();
+
+      //Eliminar gameId y playerId
+      clearSession();
+
+      //Limpiar el estado temporal
+      appState.currentGame = null;
+      appState.currentGameId = null;
+      appState.currentPlayerId = null;
+
+      //Regresar al inicio
+      showHome();
+    });
+  }
 }
 
 /*
