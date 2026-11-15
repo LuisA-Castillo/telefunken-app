@@ -1,5 +1,5 @@
 import { getPlayerResults, getPlayerTotal } from './gameTable';
-import { GAMES } from './gameRules';
+import { GAMES, getInitialPurchases } from './gameRules';
 
 /*
   Función que crea el resultado de un 
@@ -20,7 +20,7 @@ export function createPlayerResult(playerId, completedGameCode, points, purchase
 */
 export function validatePlayerResult(completedGameCode, points, purchasesUsed, purchasesRemaining, gameCompleted) {
     //Puntos obligatorios y no negativos
-    if(points === '' || Number(points) < 0){
+    if(points === '' || Number(points) < 0 || Number(points) > 999){
         return false;
     }
 
@@ -49,7 +49,7 @@ export function validatePlayerResult(completedGameCode, points, purchasesUsed, p
 export function saveHandResults(game, endReason, results) {
     //Crear el objeto q representa la mano finalizada
     const hand = {
-        numbre: game.currentHand,
+        number: game.currentHand,
         dealerIndex: game.dealerIndex,
         endReason,
         results
@@ -198,4 +198,28 @@ export function getGameWinners(game) {
 
     //Devolver todos los jugadores que tiene ese puntaje mínimo 
     return candidates.filter((player) => getPlayerTotal(game, player.id) === lowestScore);
+}
+
+/*
+  Reconstruye las compras restantes de todos los jugadores
+  utilizando únicamente el historial de manos completadas.
+*/
+export function rebuildRemainingPurchases(game) {
+    //Obtener la cantidad inicial según la modalidad
+    const initialPurchases = getInitialPurchases(game.mode);
+
+    //Recalcular jugador por jugador
+    game.players.forEach((player) => {
+        //Sumar todas las compras utilizadas por este jugador
+        const purchasesUsed = game.hands.reduce((total, hand) => {
+            const result = hand.results.find(
+                (result) => result.playerId === player.id
+            );
+
+            return total + (result ? result.purchasesUsed : 0);
+        }, 0);
+
+        //Reconstruir el saldo restante
+        player.purchasesRemaining = initialPurchases - purchasesUsed;
+    });
 }

@@ -49,6 +49,14 @@ describe('Hand results', () => {
         expect(validatePlayerResult('1/3', '', '2', 7, true)).toBe(false);
     });
 
+    test('accepts a valid player points between 0 and 999', () => {
+        expect(validatePlayerResult('1/3', '999', '2', 7, true)).toBe(true);
+    });
+
+    test('rejects points over 999', () => {
+        expect(validatePlayerResult('1/3', '1000', '2', 7, true)).toBe(false);
+    });
+
     test('rejects purchases greater than remaining', () => {
         expect(validatePlayerResult('1/3', '34', '8', 7, true)).toBe(false);
     });
@@ -95,7 +103,7 @@ describe('Hand results', () => {
 
         expect(game.hands.length).toBe(1);
         
-        expect(hand.numbre).toBe(1);
+        expect(hand.number).toBe(1);
 
         expect(hand.results).toEqual(results);
 

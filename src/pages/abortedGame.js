@@ -44,6 +44,10 @@ export function renderAbortedGame(game) {
         <button type="button" class="btn btn-outline-secondary w-100 mt-4" id="btnVerPartidaInterrumpida">
             Ver tabla
         </button>
+
+        <button type="button" class="btn btn-outline-secondary w-100 mt-3" id="btnVolverInicio">
+            Volver al inicio
+        </button>
     </div>
     `;
 }

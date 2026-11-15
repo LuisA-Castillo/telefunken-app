@@ -7,8 +7,8 @@ import { getGameScore, getPenaltyScores, getMaxPenaltyCount, getPlayerTotal } fr
 //Importar función de finalización del juego
 import { isGameFinished } from '../utils/handResults';
 
-//Renderizar la pantalla principal
-export function renderGame(game) {
+//Renderizar la pantalla principal donde se muestra la tabla de jugadores y sus manos
+export function renderGame(game, playerIsHost, readOnly = false) {
     //Obtenemos al repartidor actual usando dealerIndex
     const dealer = game.players[game.dealerIndex];
 
@@ -23,6 +23,19 @@ export function renderGame(game) {
 
     //Verificamos si el juego ha finalizado
     const gameFinished = isGameFinished(game);
+
+    const readOnlyNavigation = readOnly ? `
+    <div class="alert alert-secondary mt-4">
+        Esta partida ya finalizó.
+        La tabla se muestra únicamente para consulta.
+    </div>
+
+    <div class="d-grid mt-3">
+        <button type="button" class="btn btn-outline-secondary" id="btnVolverPartidaFinalizada">
+        Volver
+        </button>
+    </div>
+    ` : '';
 
     return `
     <main class="container-fluid py-3">
@@ -168,26 +181,34 @@ export function renderGame(game) {
             </div>
         </section>
 
+        ${readOnlyNavigation}
+
         <!-- Finalizar la mano -->
         <section class="mt-4">
             ${!gameFinished ? `
                 ${game.status === GAME_STATUS.IN_PROGRESS ? `
-                    <button type="button" class="btn btn-primary btn-lg w-100" id="btnFinalizarMano">
-                        Finalizar mano
-                    </button>
+                    ${readOnly ? `
+                        <div class="alert alert-secondary">
+                            Esta partida ya finalizó. La tabla se muestra en modo consulta.
+                        </div>
+                    ` : playerIsHost ? `
+                            <button type="button" class="btn btn-primary btn-lg w-100 mb-3" id="btnFinalizarMano">
+                                Finalizar mano
+                            </button>
 
-                    <button type="button" class="btn btn-outline-danger w-100 mt-4" id="btnFinalizarPartida">
-                        Finalizar partida
-                    </button>
+                            <button type="button" class="btn btn-outline-danger btn-lg w-100" id="btnFinalizarPartida">
+                                Finalizar partida
+                            </button>
+                        ` : `
+                            <div class="alert alert-secondary text-center mb-0">
+                                Esperando a que el anfitrión finalice la mano...
+                            </div>
+                            `}
                 `: ''}
             ` : `
                 <div class="alert alert-success text-center mb-0">
                     Partida finalizada
                 </div>
-
-                <button type="button" class="btn btn-primary w-100" id="btnVerResultadosFinales">
-                    Ver resultados finales 
-                </button>
             `}
         </section>
 
@@ -220,6 +241,55 @@ export function renderGame(game) {
 
                         <button type="button" class="btn btn-danger" id="btnConfirmarFinalizarPartida">
                             Finalizar partida
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal para cerrar la mano -->
+        <div class="modal fade" id="modalFinalizarMano" tabindex="-1" aria-labelledby="modalFinalizarManoLabel" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="modalFinalizarManoLabel">
+                            Finalizar Mano
+                        </h5>
+
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                    </div>
+
+                    <div class="modal-body">
+                        <p>
+                            ¿Cómo terminó la mano?
+                        </p>
+
+                        <div class="form-check mb-2">
+                            <input type="radio" class="form-check-input" name="endReason" id="endReasonPlayerOut" value="player_out">
+
+                            <label for="endReasonPlayerOut" class="form-check-label">
+                                Un jugador se quedó sin cartas
+                            </label>
+                        </div>
+
+                        <div class="form-check">
+                            <input type="radio" class="form-check-input" name="endReason" id="endReasonDrawPile" value="draw_pile_exhausted">
+
+                            <label for="endReasonDrawPile" class="form-check-label">
+                                Se agotó la pila de robo 
+                            </label>
+                        </div>
+
+                        <div class="alert alert-danger d-none mt-3" id="errorFinalizarMano"></div>
+                    </div>
+
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                            Cancelar
+                        </button>
+
+                        <button type="button" class="btn btn-primary" id="btnConfirmarFinalizarMano">
+                            Confirmar
                         </button>
                     </div>
                 </div>

@@ -8,4 +8,7 @@ export const appState = {
 
     //Jugador asociado al dispositivo actual.
     currentPlayerId: null,
+
+    //Identificador interno del documento de la partida dentro de firebase
+    currentGameId: null,
 }

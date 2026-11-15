@@ -56,7 +56,7 @@ export function getPenaltyScores(game, playerId){
     .filter((result) => result.completedGameCode === null)
     .map((result) => result.points);
 
-    //Sumar sus puntos
+    //Devuelve sumar de sus puntos
     return penalties;
 }
 
