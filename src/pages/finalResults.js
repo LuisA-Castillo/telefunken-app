@@ -4,7 +4,7 @@ import { getPlayerTotal } from '../utils/gameTable';
   Función que renderiza la pantalla 
   final de una partida terminada.
 */
-export function renderFinalResults(game, winners) {
+export function renderFinalResults(game, winners, playerIsHost) {
     //Crear copia de jugadores y ordenarlos de mayor a menor
     //Se usa [...game.players] para no modificar el orden original de juego
     const ranking = [...game.players].sort((playerA, playerB) => {
@@ -98,9 +98,12 @@ export function renderFinalResults(game, winners) {
             Ver tabla final
         </button>
 
+        ${playerIsHost ? `
         <button id="btnNuevaPartida" class="btn btn-primary w-100 mt-3">
             Nueva partida
         </button>
+        `: ''}
+        
     </div>
     `;
 }

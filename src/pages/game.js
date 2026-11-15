@@ -209,10 +209,6 @@ export function renderGame(game, playerIsHost, readOnly = false) {
                 <div class="alert alert-success text-center mb-0">
                     Partida finalizada
                 </div>
-
-                <button type="button" class="btn btn-primary w-100" id="btnVerResultadosFinales">
-                    Ver resultados finales 
-                </button>
             `}
         </section>
 

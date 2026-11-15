@@ -20,7 +20,7 @@ import { GAME_STATUS, getInitialPurchases, getOrderedGame, movePlayer, removePla
 import { initializeGame } from './utils/gameSetup';
 
 //Importar funiones para manejar los resultados de la mano
-import { createPlayerResult, validatePlayerResult, saveHandResults, validateHandResults, advanceToNextHand, isGameFinished, getGameWinners } from './utils/handResults';
+import { advanceToNextHand, createPlayerResult, getGameWinners, isGameFinished, rebuildRemainingPurchases, saveHandResults, validateHandResults, validatePlayerResult } from './utils/handResults';
 
 //Importar la generación de Ids
 import { generatePlayerId } from './utils/playerId';
@@ -28,8 +28,8 @@ import { generatePlayerId } from './utils/playerId';
 //Importar la creación de una nueva partida
 import { createNextGame } from './utils/newGameFlow';
 
-//DATOS DE PRUEBA
-//import { createFinishedTestGame } from './utils/testData';
+//Importar validación de juegos pendientes
+import { getPendingGames } from './utils/gameTable';
 
 //Importar las funciones de finalización de una partida
 import { abortGame, finishGame } from './utils/gameLifecycle';
@@ -41,7 +41,7 @@ import { canManageLobby, canJoinGame } from './utils/lobbyPermissions';
 import { leaveLobby } from './utils/lobbyActions';
 
 //Importar las funciones para gestionar una partida en firestore
-import { addPlayerToGame, createGameInFirestore, createHandInFirestore, deleteGame, deletePlayerFromGame, findGameByCode, getGameById, getHandsFromGame, getPlayersFromGame, saveHandResultsToFirebase, subscribeToGame, subscribeToGamePlayers, updateGameHost, updateGameState, updatePlayersOrder } from './services/gameRepository';
+import { addPlayerToGame, createGameInFirestore, createHandInFirestore, deleteGame, deletePlayerFromGame, findGameByCode, getGameById, getHandResults, getHandsFromGame, getPlayersFromGame, subscribeToGame, subscribeToGamePlayers, saveHandResult, subscribeToHandResults, subscribeToHand, updateGameHost, updateGameState, updateHandResult, updateHandStatus, updateNextGameId, updatePlayersOrder } from './services/gameRepository';
 
 //Importar las funciones para manejar la sesión local
 import { clearSession, loadSession, saveSession } from './services/sessionStorage';
@@ -79,6 +79,35 @@ let unsubscribePlayersListener = null;
 let listeningGameId = null;
 
 /*
+  Mantener una referencia al listener
+  del juego actualmente activo.
+*/
+let unsubscribeGameListener = null;
+let listeningGameDocumentId = null;
+
+//Para mantener una referencia al listener de la mano actualmente activa
+let unsubscribeHandListener = null;
+
+//Para guardar qué mano estamos escuchando
+let listeningHandId = null;
+
+//Mantener la referencia al listener de resultados de la mano actual
+let unsubscribeResultsListener = null
+
+//Guardar la mano cuyos resultados estamos escuchando
+let listeningResultsHandId = null;
+
+//Escucha para esperar nuevo juego
+let unsubscribeNextGameListener = null;
+
+function stopNextGameListener() {
+  if(unsubscribeNextGameListener){
+    unsubscribeNextGameListener();
+    unsubscribeNextGameListener = null;
+  }
+}
+
+/*
   Función para detener la escucha en tiempo 
   real de los jugadores del lobby.
 
@@ -100,13 +129,6 @@ function stopPlayersListener() {
 }
 
 /*
-  Mantener una referencia al listener
-  del juego actualmente activo.
-*/
-let unsubscribeGameListener = null;
-let listeningGameDocumentId = null;
-
-/*
   Funcion para detener la escucha en tiempo real
   del documento principal de la partida.
 */
@@ -116,6 +138,44 @@ function stopGameListener() {
 
     unsubscribeGameListener = null;
     listeningGameDocumentId = null;
+  }
+}
+
+/*
+  Función para detener la escucha en tiempo real
+  de la mano actualmente activa.
+
+  Será importante cuando:
+
+  - avancemos a otra mano;
+  - termine la partida;
+  - abandonemos la sesión;
+  - cambiemos de partida.
+*/
+function stopHandListener() {
+  //Comprobar si existe un listener activo
+  if(unsubscribeHandListener){
+    //Ejecutar la función que Firestore devuelve para detener OnSnapshot()
+    unsubscribeHandListener();
+
+    //Limpiar referencias locales
+    unsubscribeHandListener = null;
+    listeningHandId = null;
+  }
+}
+
+/*
+  Función para detener la escucha
+  en tiempo real de los resultados.
+*/
+function stopResultsListener() {
+  //Si existe una suscripción, detenerla
+  if(unsubscribeResultsListener){
+    unsubscribeResultsListener();
+
+    //Limpiar referencias locales
+    unsubscribeResultsListener = null;
+    listeningResultsHandId = null;
   }
 }
 
@@ -390,7 +450,7 @@ function showLobby() {
     listeningGameDocumentId = appState.currentGameId;
 
     //Escuchar cambios del documento principal de la partida
-    unsubscribeGameListener = subscribeToGame(appState.currentGameId, (updateGame) => {
+    unsubscribeGameListener = subscribeToGame(appState.currentGameId, async (updateGame) => {
       //Si la partida fue eliminada de firestore, limpia sesión y vuelve al inicio
       if(!updateGame) {
         //Detener listeners activos
@@ -433,6 +493,8 @@ function showLobby() {
       if(game.status === GAME_STATUS.ABORTED){
         //Ya no se necesita escuchar cambios de la partida activa
         stopPlayersListener();
+        //Detener el listener de la mano
+        stopHandListener();
         //Detener el listener principal porque la partida terminó
         stopGameListener();
         //Mostrar la pantalla de partida finalizada
@@ -440,7 +502,58 @@ function showLobby() {
         return; 
       }
 
-       /*
+      /*
+        ------------------------------------------------
+        NUEVA PARTIDA CREADA POR EL HOST
+        ------------------------------------------------
+
+        Si esta partida ya terminó y el host creó
+        otra, todos los dispositivos deben saltar
+        automáticamente al nuevo lobby.
+      */
+      if(updateGame.status === GAME_STATUS.FINISHED && updateGame.nextGameId){
+
+        const nextGameId = updateGame.nextGameId;
+
+        //Detener listeners de la partida anterior
+        stopPlayersListener();
+        stopHandListener();
+        stopResultsListener();
+        stopGameListener();
+
+        try {
+          //Recuperar la nueva partida
+          const nextGame = await getGameById(nextGameId);
+
+          if(!nextGame){
+            console.error('No se encontró la nueva partida.');
+            return;
+          }
+
+          //Recuperar los jugadores
+          const nextPlayers = await getPlayersFromGame(nextGameId);
+
+          nextGame.players = nextPlayers;
+
+          nextGame.hands = [];
+
+          //Cambiar este dispositivo a la nueva partida
+          appState.currentGame = nextGame;
+
+          appState.currentGameId = nextGameId;
+
+          saveSession(nextGameId, appState.currentPlayerId);
+
+          //Entrar al nuevo lobby
+          showLobby();
+        } catch(error){
+          console.error('Error al cambiar a la nueva partida: ', error);
+        }
+
+        return;
+      }
+
+      /*
         ------------------------------------------------
         PARTIDA FINALIZADA NORMALMENTE
         ------------------------------------------------
@@ -450,10 +563,21 @@ function showLobby() {
         dispositivos deben recibir el cambio.
       */
       if(game.status === GAME_STATUS.FINISHED){
+        //Ya no se necesita escuchar cambios de la partida activa
         stopPlayersListener();
-        stopGameListener();
+        //Comprobar si este dispositivo ya tiene cargada la última mano.
 
-        showFinalResults();
+        const finalHandLoaded = game.hands.some((hand) => hand.number === game.currentHand);
+
+        if(finalHandLoaded){
+          //Detener el listener de la mano
+          stopHandListener();
+          //Detener el listener principal porque la partida terminó
+          stopGameListener();
+          //Mostrar la pantalla de resultados
+          showFinalResults();
+        }
+        
         return;
       } 
       
@@ -669,6 +793,180 @@ function showLobby() {
   }
 }
 
+function startNextGameListener() {
+  if(!appState.currentGameId || unsubscribeNextGameListener){
+    return;
+  }
+
+  unsubscribeNextGameListener = subscribeToGame(appState.currentGameId, async (updateGame) => {
+        //Mientras el host no haya creado una nueva partida, no hacemos nada
+        if(!updateGame || !updateGame.nextGameId){
+          return;
+        }
+
+        const nextGameId = updateGame.nextGameId;
+
+        //Ya detectamos la nueva partida.
+        stopNextGameListener();
+
+        try {
+          const nextGame = await getGameById(nextGameId);
+
+          const nextPlayers = await getPlayersFromGame(nextGameId);
+
+          nextGame.players = nextPlayers;
+
+          nextGame.hands = [];
+
+          appState.currentGame = nextGame;
+
+          appState.currentGameId = nextGameId;
+
+          //El playerId permanece igual, porque createNextGame conserva los mismos jugadores
+          saveSession(nextGameId, appState.currentPlayerId);
+
+          showLobby();
+        } catch(error){
+          console.error('Error al ingresar a la nueva partida: ', error);
+        }
+      },
+      (error) => {
+        console.error('Error al esperar nueva partida: ', error);
+      }
+    );
+}
+
+/*
+  Función que inicia la escucha en tiempo real
+  de la mano actual de la partida.
+*/
+function startCurrentHandListener() {
+  //Recuperar al partida actual
+  const game = appState.currentGame;
+
+  //Si no existe una partida o no tenemos su identificador interno, no se crea el listener
+  if(!game || !appState.currentGameId){
+    return;
+  }
+
+  //Construir el identificador determinístico correspondiente a la mano actual
+  const handId = `hand-${game.currentHand}`;
+
+  //Si ya se escucha la mano, no se crea otro listener
+  if(listeningHandId === handId && unsubscribeHandListener){
+    return;
+  }
+
+  //Si existe un listener de otra mano, se debe detener antes de crear el otro
+  stopHandListener();
+
+  //Registrar la mano q se va a escuchar
+  listeningHandId = handId;
+
+  //Crear el listener de Firestore
+  unsubscribeHandListener = subscribeToHand(appState.currentGameId, handId, async (hand) => {
+    //Al inicio puede ser que la mano no exista 
+    if(!hand){
+      return;
+    }
+
+    //TEMPORAL: Ahora solo se quiere comprobar q TODOS los telefonos estan recibiendo correctamente el cierre de la mano
+    console.log('Mano recibida en tiempo real: ', hand);
+
+    //Detectar el estado creado por el host al finalizar la mano
+    if(hand.status === 'collecting_results'){
+      //TEMPORAL: Mostrar en consola para pruebas 
+      console.log(`La ${hand.id} está esperando resultados.`);
+
+      //Comenzar a escuchar los resultados de esta mano
+      startResultsListener(hand);
+
+      try {
+        //Recuperar los resultados que ya existen en firestore
+        const results = await getHandResults(appState.currentGameId, hand.id);
+
+        //Buscar si este dispositivo ya registró un resultado
+        const currentPlayerResult = results.find((result) => 
+          result.playerId === appState.currentPlayerId
+        );
+
+        //Recuperar al jugador de este dispositivo
+        const currentPlayer = game.players.find((player) => 
+          player.id === appState.currentPlayerId
+        );
+
+        //Si no se encuentra al jugador, no continuar
+        if(!currentPlayer){
+          console.error('No se encontró al jugador actual.');
+          return;
+        }
+
+        //Si el resultado existe, no volver a presentar el formulario de resultados
+        if(currentPlayerResult){
+          showResultsStatus(hand, results);
+          return;
+        }
+
+        //Si todavía no existe resultado, mostrar el formulario de resultados
+        showHandResults(hand);
+      } catch (error) {
+        console.error('Error al comprobar el resultado del jugador: ', error);
+      }
+      
+      return;
+    }
+
+    //Si el host ya confirmó todos los resultados
+    if(hand.status === 'completed'){
+      //Ya no escuchamos resultados
+      stopResultsListener();
+
+      //Detener listener de la mesa
+      stopHandListener();
+
+      try {
+        //Recuperar el documento principal actualizado
+        const updateGame = await getGameById(appState.currentGameId);
+
+        //Recuperar las manos ya completadas
+        const completedHands = await getHandsFromGame(appState.currentGameId);
+
+        //Actualizar solo los datos generales
+        game.status = updateGame.status;
+        game.currentHand = updateGame.currentHand;
+        game.dealerIndex = updateGame.dealerIndex;
+        game.hands = completedHands;
+
+        //Reconstruir las compras restantes a partir del historial
+        rebuildRemainingPurchases(game);
+
+        //Si esta era la última mano y la partida ya fue marcada como finalizada, ahora sí tenemos todo el historial sincronizado.
+        if(game.status === GAME_STATUS.FINISHED){
+
+          stopResultsListener();
+          stopHandListener();
+          stopGameListener();
+
+          showFinalResults();
+          return;
+        }
+
+        //Mostrar la mesa actualizada
+        showGame();
+      } catch (error) {
+        console.error('Error al cargar la siguiente mano: ', error);
+      }
+      
+      return;
+    }
+  }, 
+    //Manejar errores en la escucha
+    (error) => {
+      console.error('Error al sincronizar la mano: ', error);  
+    }
+  );
+}
+
 /*
   Función que muestra la pantalla 
   principal de la partida, la tabla de anotaciones.
@@ -740,6 +1038,9 @@ function showGame(readOnly = false) {
     return;
   }
 
+  //La mesa está activa. Se inicia la escucha de la mano
+  startCurrentHandListener();
+
   //Evento para finalizar la mano y registrar los resultados
   const btnFinalizarMano = document.querySelector('#btnFinalizarMano');
 
@@ -796,15 +1097,6 @@ function showGame(readOnly = false) {
     });
   }
 
-  //Evento para ver resultados finales
-  const btnVerResultadosFinales = document.querySelector('#btnVerResultadosFinales');
-
-  if(btnVerResultadosFinales){
-    btnVerResultadosFinales.addEventListener('click', () => {
-      showFinalResults();
-    });
-  }
-
   //Evento y modal para finalizar partida
   const btnFinalizarPartida = document.querySelector('#btnFinalizarPartida');
   const modalFinalizarPartida = document.querySelector('#modalFinalizarPartida');
@@ -853,164 +1145,671 @@ function showGame(readOnly = false) {
       }
     });
   }
-
 }
 
 /*
-  Función que perimte ingresar los  
-  datos al finalizar la mano.
+  Función que muestra el estado
+  de recolección de resultados.
+
+  Recibe:
+
+  - hand:
+    mano actual.
+
+  - results:
+    resultados ya registrados.
 */
-function showHandResults() {
+function showResultsStatus(hand, results) {
+  //Recuperar la partida actual
   const game = appState.currentGame;
 
+  if(!game){
+    return;
+  }
+
+  //Determinar si este dispositivo pertenece al host
+  const playerIsHost = appState.currentPlayerId === game.hostPlayerId;
+
+  //Comporbar si hay un resultado para cada jugador
+  const allResultsSubmitted = results.length === game.players.length;
+
+  //Construir el estado de cada jugador
+  const playerStatus = game.players.map((player) => {
+    //Buscar si existe resultado para ese jugador
+    const result = results.find((item) => item.playerId === player.id);
+
+    //Si existe resultado mostrarlo como registrado
+    if(!result){
+      return `
+      <li class="list-group-item">
+          <div class="d-flex justify-content-between align-items-center">
+            <span>
+                ${player.name}
+            </span>
+
+            <span class="badge text-bg-secondary">
+                Pendiente
+            </span>
+          </div>
+      </li>
+      `;
+    }
+
+    //Si este dispositivo no es el host solo se indica que el resultado fue registrado
+    if(!playerIsHost){
+      return `
+      <li class="list-group-item">
+          <div class="d-flex justify-content-between align-items-center">
+              <span>
+                  ${player.name}
+              </span>
+
+              <span class="badge text-bg-success">
+                  Registrado
+              </span>
+          </div>
+      </li>
+      `;
+    }
+
+    //Vista del host
+    //Preparar el texto correspondiente al juego completado
+    const completedGameText = result.completedGameCode ? result.completedGameCode 
+    : 'No completó juego'; 
+  
+    return `
+    <li class="list-group-item">
+        <div class="d-flex justify-content-between align-items-start gap-3">
+            <div>
+                <div class="fw-bold mb-2">
+                    ${player.name}
+                </div>
+
+                <div class="small">
+                    Juego:
+                    <strong>
+                        ${completedGameText}
+                    </strong>
+                </div>
+
+                <div class="small">
+                    Puntos: 
+                    <strong>
+                        ${result.points}
+                    </strong>
+                </div>
+
+                <div class="small">
+                    Compras:
+                    <strong>
+                        ${result.purchasesUsed}
+                    </strong>
+                </div>
+
+                <button type="button" class="btn btn-outline-secondary btn-sm mt-3 btnEditarResultado" data-player-id="${player.id}">
+                    Editar
+                </button>
+            </div>
+
+            <span class="badge text-bg-success">
+                Registrado
+            </span>
+        </div>
+    </li>
+    `;
+  }).join('');
+  
+  //Renderizar la pantalla
+  app.innerHTML = `
+  <main class="container py-4">
+      <section class="mb-4">
+          <h1 class="h3 fw-bold mb-1">
+              Resultados de la mano
+          </h1>
+
+          <p class="text-secondary mb-0">
+              Mano ${hand.number}
+          </p>
+      </section>
+
+      <section class="card">
+          <div class="card-body">
+              <h2 class="h5 mb-3">
+                  Estado de los jugadores
+              </h2>
+
+              <ul class="list-group">
+                  ${playerStatus}
+              </ul>
+          </div>
+      </section>
+
+      ${
+          allResultsSubmitted ? `
+          <div class="alert alert-success mt-4">
+              Todos los jugadores registraron sus resultados.
+          </div>
+          ` : `
+          <div class="alert alert-secondary mt-4">
+              Esperando los resultados restantes...
+          </div>
+          `
+      }
+
+      ${
+          playerIsHost && allResultsSubmitted ? `
+          <button type="button" class="btn btn-primary w-100 mt-3" id="btnConfirmarResultados">
+              Confirmar resultados y continuar
+          </button>
+          `:''
+      }
+  </main>
+  `;
+
+  /*
+    ------------------------------------------------
+    EDICIÓN DE RESULTADOS POR EL HOST
+    ------------------------------------------------
+  */
+  if(playerIsHost){
+    //Obtener todos los botones Editar
+    const editButtons = document.querySelectorAll('.btnEditarResultado');
+
+    editButtons.forEach((button) => {
+      button.addEventListener('click', async () => {
+        //Recuperar el jugador asociado al botón seleccionado
+        const playerId = button.dataset.playerId;
+        const player = game.players.find((item) => item.id === playerId);
+
+        //Recuperar su resultado actual
+        const result = results.find((item) => item.playerId === playerId);
+
+        if(!player || !result){
+          return;
+        }
+
+        //Buscar el <li> que le corresponde al jugador
+        const playerItem = button.closest('.list-group-item');
+
+        //En modo libre se debe poder editar el juego completado
+        const pendingGames = game.mode === 'libre' ? getPendingGames(game, player.id) : [];
+
+        //Construir el campo correspondiente al juego
+        const gameField = game.mode === 'libre' ? `
+        <div class="mb-3">
+            <label for="editGame-${player.id}" class="form-label">
+                Juego completado
+            </label>
+
+            <select id="editGame-${player.id}" class="form-select">
+                <option value="">
+                    No completó juego
+                </option>
+
+                ${pendingGames.map((gameItem) => `
+                    <option value="${gameItem.code}" 
+                    ${result.completedGameCode === gameItem.code ? 'selected' : ''}>
+                        ${gameItem.code}
+                    </option>
+                    `).join('')}
+            </select>
+        </div>
+        `: `
+        <div class="mb-3">
+            <label class="form-label">
+                Juego
+            </label>
+
+            <input type="text" class="form-control" value="${result.completedGameCode}" disabled>
+        </div>
+        `;
+
+        //Reemplazar temporalmente la tarjeta del jugador por el formulario de edición
+        playerItem.innerHTML = `
+        <div class="fw-bold mb-3">
+            ${player.name}
+        </div>
+
+        ${gameField}
+
+        <div class="mb-3">
+            <label for="editPoints-${player.id}" class="form-label">
+                Puntos
+            </label>
+
+            <input type="number" class="form-control" id="editPoints-${player.id}" min="0" max="999" step="1" value="${result.points}">
+        </div>
+
+        <div class="mb-3">
+            <label for="editPurchases-${player.id}" class="form-label">
+                Compras utilizadas
+            </label>
+
+            <input type="number" class="form-control" id="editPurchases-${player.id}" min="0" max="${player.purchasesRemaining}" step="1" value="${result.purchasesUsed}">
+
+            <div class="form-text">
+                Disponibles:
+                ${player.purchasesRemaining}
+            </div>
+        </div>
+
+        <div class="d-flex gap-2">
+            <button type="button" class="btn btn-outline-secondary flex-fill" id="btnCancelarEdicion-${player.id}">
+                Cancelar
+            </button>
+
+            <button type="button" class="btn btn-outline-secondary flex-fill" id="btnGuardarEdicion-${player.id}">
+                Guardar cambios
+            </button>
+        </div>
+        `;
+
+        /*
+          ---------------------------------------------
+          CANCELAR
+          ---------------------------------------------
+        */
+        const btnCancelarEdicion = document.querySelector(`#btnCancelarEdicion-${player.id}`);
+
+        btnCancelarEdicion.addEventListener('click', () => {
+          //Renderizar los resultados que ya habían
+          showResultsStatus(hand, results);
+        });
+
+        /*
+          ---------------------------------------------
+          GUARDAR CORRECCIÓN
+          ---------------------------------------------
+        */
+        const btnGuardarEdicion = document.querySelector(`#btnGuardarEdicion-${player.id}`);
+
+        btnGuardarEdicion.addEventListener('click', async () => {
+          //Lee los nuevos valores
+          const pointsInput = document.querySelector(`#editPoints-${player.id}`);
+          const purchasesInput = document.querySelector(`#editPurchases-${player.id}`);
+
+          const newPoints = Number(pointsInput.value);
+          const newPurchases = Number(purchasesInput.value);
+
+          //Validar puntos
+          if(!Number.isInteger(newPoints) ||  newPoints < 0 || newPoints > 999){
+            alert('Los puntos deben estar entre 0 y 999.');
+            return;
+          }
+
+          //Validar compras
+          if(!Number.isInteger(newPurchases) ||  newPurchases < 0 || newPurchases > player.purchasesRemaining){
+            alert('Los puntos deben estar entre 0 y ${player.purchasesRemaining}.');
+            return;
+          }
+
+          //Determinar el juego completado
+          let newCompletedGameCode = result.completedGameCode;
+
+          //En modo libre se obtiene del selector
+          if(game.mode === 'libre'){
+            const gameSelect = document.querySelector(`#editGame-${player.id}`);
+            //Si está vacía significa que no completó ningún juego
+            newCompletedGameCode = gameSelect.value === '' ? null : gameSelect.value;
+          }
+
+          try {
+            //Evitar doble clic durante la actualización
+            button.disabled = true;
+            button.textContent = 'Guardando...';
+
+            //Actualizar el docuemnto existente
+            await updateHandResult(appState.currentGameId, hand.id, player.id, newCompletedGameCode, newPoints, newPurchases);
+
+          } catch (error) {
+            console.error('Error al corregir resultado: ', error);
+
+            button.disabled = false;
+            button.textContent = 'Editar';
+
+            alert('No fue posible corregir el resultado');
+          }
+        });
+      });
+    });
+  }
+
+  /*
+    ------------------------------------------------
+    CONFIRMACIÓN DE RESULTADOS
+    ------------------------------------------------
+  */
+  const btnConfirmarResultados = document.querySelector('#btnConfirmarResultados');
+
+  //En dispositivos que no son host el botón no existe
+  if(btnConfirmarResultados){
+    btnConfirmarResultados.addEventListener('click', async () => {
+      //Validar el comjunto Completo de resultados
+      const handIsValid = validateHandResults(hand.endReason, results);
+
+      if(!handIsValid){
+        alert('Los puntajes no coinciden con la forma en que terminó la mano.');
+        return;
+      }
+
+      //Evitar múltiples confirmaciones mientras firebase procesa
+      btnConfirmarResultados.disabled = true;
+      btnConfirmarResultados.textContent = 'Confirmando...';
+
+      try {
+        //Guardar la mano localmente
+        saveHandResults(game, hand.endReason, results);
+
+        //Determinar si terminó la partida
+        const gameFinished = isGameFinished(game);
+
+        //Si terminó la partida
+        if(gameFinished){
+          //Cambiar el estado local general de la partida a FINISHED
+          finishGame(game);
+
+          //Persistir el estado final de la partida
+          await updateGameState(appState.currentGameId, game);
+
+          //Marcar la mano como completamente cerrada
+          await updateHandStatus(appState.currentGameId, hand.id, 'completed');
+
+          //Los listeners reciben el cambio
+          showFinalResults();
+          return;
+        }
+
+        //Si la partida continúa
+        //Preparar localemnte la siguiente mano
+        advanceToNextHand(game);
+
+        //Persistir en le documento principal
+        await updateGameState(appState.currentGameId, game);
+        
+        //Marcar la mano actual como terminada
+        await updateHandStatus(appState.currentGameId, hand.id, 'completed');
+
+        //Ya no se necesita escuchar los resultados
+        stopResultsListener();
+
+        //Ya no se necesita escuchar la mano
+        stopHandListener();
+
+        //Mostrar la siguiente mano
+        showGame();
+      } catch (error) {
+        console.error('Error al confirmar los resultados: ', error);
+
+        //Permitir un nuevo intento
+        btnConfirmarResultados.disabled = false;
+        btnConfirmarResultados.textContent = 'Confirmar resultados y continuar';
+
+        alert('No fue posible cerra la mano');
+      }
+    });
+  }
+}
+
+/*
+  Función que inicia la escucha en tiempo real
+  de los resultados de una mano.
+*/
+function startResultsListener(hand) {
+  //Comprobar que exista una partida
+  const game = appState.currentGame;
+
+  if(!game || !appState.currentGameId){
+    return;
+  }
+
+  //Si ya estamos escuchando los resultados de esta mano, no crear otro listener
+  if(listeningResultsHandId === hand.id && unsubscribeResultsListener){
+    return;
+  }
+
+  //Detener cualquier listener anterior
+  stopResultsListener();
+
+  //Registrar la mano que va a escuchar
+  listeningResultsHandId = hand.id;
+
+  //Escuchar en tiempo real
+  unsubscribeResultsListener = subscribeToHandResults(appState.currentGameId, hand.id,(results) => {
+    //Buscar si el jugador ya registró su resultado
+    const currentPlayerResult = results.find((result) => result.playerId === appState.currentPlayerId);
+
+    //Si ya registró mostrar el estado general
+    if(currentPlayerResult){
+      showResultsStatus(hand, results);
+      return;
+    }
+  }, (error) => {
+    console.error('Error al sincronizar resultados: ', error);
+  });
+}
+
+/*
+  Función que muestra el formulario
+  correspondiente únicamente al jugador
+  asociado a este dispositivo.
+*/
+function showHandResults(hand) {
+  //Recuperar la partida actual
+  const game = appState.currentGame;
+
+  //Si no existe partida regresar al inicio
   if(!game){
     showHome();
     return;
   }
 
-  app.innerHTML = renderHandResults(game);
+  //Buscar al jugador asociado a este dispositivo
+  const currentPlayer = game.players.find((player) => player.id === appState.currentPlayerId);
 
-  //Configurar el comportamiento de los formularios del modo libre
-  if(game.mode === 'libre'){
-    game.players.forEach((player) => {
-      const yesRadio = document.querySelector(`#completedYes-${player.name}`);
-      const noRadio = document.querySelector(`#completedNo-${player.name}`);
-      const gameSelect = document.querySelector(`#game-${player.name}`);
-
-      //Al seleccionar "Sí" se habilita el selector
-      yesRadio.addEventListener('change', () => {
-        gameSelect.disabled = false;
-      });
-
-      //Al seleccionar "No" se deshabilita el selector y se elimina cualquier seleccion previa
-      noRadio.addEventListener('change', () => {
-        gameSelect.disabled = true;
-        gameSelect.value = '';
-      });
-    });
+  //Si por alguna razón el jugador ya no pertenece a la partida, no se debe mostrar el formulario
+  if(!currentPlayer){
+    console.error('No se encontró el jugador actual.');
   }
 
-  const btnVolverJuego = document.querySelector('#btnVolverJuego');
-  btnVolverJuego.addEventListener('click', () => {
-    showGame();
-  });
+  //Renderizar solamente el formulario correspondiente a este jugador
+  app.innerHTML = renderHandResults(game, currentPlayer, hand);
 
-  const btnGuardarResultados = document.querySelector('#btnGuardarResultados');
+  /*
+    ------------------------------------------------
+    MODO LIBRE
+    ------------------------------------------------
 
-  btnGuardarResultados.addEventListener('click', async () => {
-    //Obtener motivo de la terminación de la mano
-    const endReasonInput = document.querySelector('input[name="endReason"]:checked');
+    En modo libre necesitamos habilitar
+    o deshabilitar el selector del juego
+    dependiendo de si el jugador indica
+    que completó uno.
+  */
+  if(game.mode === 'libre'){
+    //Recuperar los controles del jugador actual
+    const yesRadio = document.querySelector(`#completedYes-${currentPlayer.id}`);
+    const noRadio = document.querySelector(`#completedNo-${currentPlayer.id}`);
+    const gameSelect = document.querySelector(`#game-${currentPlayer.id}`);
 
-    if(!endReasonInput){
-      alert('Selecciona cómo terminó la mano.');
-      return;
-    }
+    //Al seleccionar "Sí" se habilita el selector
+    yesRadio.addEventListener('change', () => {
+      gameSelect.disabled = false;
+    });
 
-    const results = [];
+    //Al seleccionar "No" se deshabilita el selector y se elimina cualquier seleccion previa
+    noRadio.addEventListener('change', () => {
+      gameSelect.disabled = true;
+      gameSelect.value = '';
+    }); 
+  }
 
-    //Recorrer cada jugador para leer su formulario
-    for(const player of game.players){
-      const pointsInput = document.querySelector(`#points-${player.name}`);
+  /*
+    ------------------------------------------------
+    CONTROL DEL CAMPO PUNTOS
+    ------------------------------------------------
+  */
+  const pointsInput = document.querySelector(`#points-${currentPlayer.id}`);
 
-      const purchasesInput = document.querySelector(`#purchases-${player.name}`);
-
-      const points = pointsInput.value;
-
-      //En la primera mano del modo ordenado no existe el input de compras. Se usa 0 cuando no se encuentra el campo
-      const purchasesUsed = purchasesInput ? purchasesInput.value : '0';
-
-      let completedGameCode = null;
-      let gameCompleted = true;
-
-      //En el modo libre debemos consultar si se completó un juego
-      if(game.mode === 'libre'){
-        const completedInput = document.querySelector(`input[name=completed-${player.name}]:checked`);
-
-        //Obligatorio indicar Sí o No
-        if(!completedInput){
-          alert(`${player.name}: indica que sí completó un juego.`);
-          return;
-        }
-
-        gameCompleted = completedInput.value === 'yes';
-
-        if(gameCompleted) {
-          const gameSelect = document.querySelector(`#game-${player.name}`);
-
-          completedGameCode = gameSelect.value;
-        }
-      } else {
-        //En el modo ordenado ya se tiene determinado el número de mano
-        const orderedGame = getOrderedGame(game.currentHand);
-
-        completedGameCode = orderedGame.code;
-      }
-
-      //Validar antes de construir el resultado definitivo
-      const isValid = validatePlayerResult(completedGameCode, points, purchasesUsed, player.purchasesRemaining, gameCompleted);
-
-      if(!isValid){
-        alert(`${player.name}: revisa los datos ingresados`);
+  if(pointsInput){
+    pointsInput.addEventListener('input', () => {
+      //Si el campo está vacío
+      if(pointsInput.value === ''){
         return;
       }
 
-      //Convertir puntos y compras a numeros
-      const result = createPlayerResult(player.id, completedGameCode, Number(points), Number(purchasesUsed));
+      //Convertir el valor ingresado a número
+      const points = Number(pointsInput.value);
 
-      results.push(result);
+      //No permitir valores negativos
+      if(points < 0){
+        pointsInput.value = 0;
+        return;
+      }
+
+      //El puntaje máximo es 999
+      if(points > 999){
+        pointsInput.value = 999;
+      }
+    });
+  }
+
+ /*
+    ------------------------------------------------
+    CONTROL DEL CAMPO COMPRAS
+    ------------------------------------------------
+  */
+  const purchasesInput = document.querySelector(`#purchases-${currentPlayer.id}`);
+
+  //En la primera mano no se realizan compras, no está renderizado
+  if(purchasesInput){
+    purchasesInput.addEventListener('input', () => {
+      //Si queda vacío temporalmente, no hacer nada
+      if(purchasesInput.value === ''){
+        return;
+      }
+
+      //Convertir a número
+      const purchasesUsed = Number(purchasesInput.value);
+
+      //No permitir negativos
+      if(purchasesUsed < 0){
+        purchasesInput.value = 0;
+        return;
+      }
+
+      //No permitir utilizar más compras de las que tiene disponibles
+      if(purchasesUsed > currentPlayer.purchasesRemaining){
+        purchasesInput.value = currentPlayer.purchasesRemaining;
+      }
+    });
+  }
+
+  /*
+    ------------------------------------------------
+    GUARDAR RESULTADO INDIVIDUAL
+    ------------------------------------------------
+
+    Cada dispositivo guarda únicamente
+    el resultado del jugador asociado
+    a appState.currentPlayerId.
+  */
+  const btnGuardarResultado = document.querySelector('#btnGuardarResultado');
+  const errorResultado = document.querySelector('#errorResultado');
+
+  btnGuardarResultado.addEventListener('click', async () => {
+    //Ocultar errores anteriores
+    ocultarError(errorResultado);
+
+    //Obtener el campo de puntos
+    const pointsInput = document.querySelector(`#points-${currentPlayer.id}`);
+    
+    //Obtener el campo de compras
+    const purchasesInput = document.querySelector(`#purchases-${currentPlayer.id}`);
+
+    //Leer los valores ingresados
+    const points = pointsInput.value;
+
+    //Si el campo de compras no existe usar 0
+    const purchasesUsed = purchasesInput ? purchasesInput.value : '0';
+
+    //Por defecto ningún juego se considera completado hasta determinarlo segun la modalidad
+    let completedGameCode = null;
+
+    //En modo ordenado siempre existe un juego asociado a la mano.
+    let gameCompleted = game.mode === 'ordenado';
+
+    /*
+      ------------------------------------------------
+      MODO LIBRE
+      ------------------------------------------------
+    */
+    if(game.mode === 'libre'){
+      //Obtener el radio seleccionado
+      const completedInput = document.querySelector(`input[name="completed-${currentPlayer.id}"]:checked`);
+
+      //Es obligatorio indicar si se completó o no el juego
+      if(!completedInput){
+        mostrarError(errorResultado, 'Indica si completaste un juego.');
+        return;
+      }
+
+      //Convertir la respuesta del radio en un boolean
+      gameCompleted = completedInput.value === 'yes';
+
+      //Solo si respondió sí, debemos recuperar el código del juego
+      if(gameCompleted){
+        const gameSelect = document.querySelector(`#game-${currentPlayer.id}`);
+        completedGameCode = gameSelect.value;
+      }
     }
 
-    //Validar el arreglo completo
-    const isHandValid = validateHandResults(endReasonInput.value, results);
+    /*
+      ------------------------------------------------
+      MODO ORDENADO
+      ------------------------------------------------
 
-    if(!isHandValid){
-      alert('Los puntajes no coinciden con la forma en que terminó la mano.');
+      En esta modalidad el juego correspondiente
+      ya viene determinado por el número de mano.
+    */
+    if(game.mode === 'ordenado'){
+      const orderedGame = getOrderedGame(hand.number);
+      completedGameCode = orderedGame.code;
+    }
+
+    //Validar los datos individuales antes de construir el resultado
+    const isValid = validatePlayerResult(completedGameCode, points, purchasesUsed, currentPlayer.purchasesRemaining, gameCompleted);
+
+    //Si alguno de los valores no cumple las reglas, no se envía a Firestore
+    if(!isValid){
+      mostrarError(errorResultado, 'Revisa los datos ingresados');
       return;
     }
 
-    //Todos los jugadores tienen resultados válidos y podemos guardar la mano
-    saveHandResults(game, endReasonInput.value, results);
-
-    //Recuperar la mano que se agregó localmente
-    const savedHand = game.hands[game.hands.length - 1];
-
-    console.log(
-      'Mano guardada localmente:',
-      savedHand
-    );
+    //Construir el resultado usando la lógica que maneja el juego
+    const result = createPlayerResult(currentPlayer.id, completedGameCode, Number(points), Number(purchasesUsed));
 
     try {
-      //Crear el documento general de la mano
-      const handId = await createHandInFirestore(appState.currentGameId, savedHand);
+      //Evitar multiples clics mientras se guarda en Firebase
+      btnGuardarResultado.disabled = true;
+      btnGuardarResultado.textContent = 'Guardando...';
 
-      //Guardar el resultado en la subcolección results
-      await saveHandResultsToFirebase(appState.currentGameId, handId, results);
+      //Guardar el resultado del jugador
+      await saveHandResult(appState.currentGameId, hand.id, result);
+
     } catch (error) {
-      console.error('Error al guardar la mano en firestore: ', error);
-    }
+      //Si firestore informa que este jugador ya tiene un resultado registrado, llevamos al jugador a la pantalla de espera
+      if(error.message === 'RESULT_ALREADY_EXISTS'){
+        return;
+      }
 
-    //Verificar si el juego ha finalizado
-    const gameFinished = isGameFinished(game);
+      //Registrar el error técnico
+      console.error('Error al guardar el resultado: ', error);
 
-    //Si terminó no se avanza de mano
-    if(gameFinished){
-      finishGame(game);
+      //Volver a habilitar el botón de guardado
+      btnGuardarResultado.disabled = false;
+      btnGuardarResultado.textContent = 'Guardar mi resultado';
 
-      showFinalResults();
-      return;
-    }
-
-    //Si aún continua la partida, se prepara la siguiente mano
-    advanceToNextHand(game);
-
-    try {
-      //Persistir en firestore el nuevo estado de la partida
-      await updateGameState(appState.currentGameId, game);
-
-      //Mostrar la tabla únicamente despues de guardar el avance de la mano
-      showGame();
-    } catch (error) {
-      console.error('Error al avanzar a la siguiente mano: ', error);
+      //Informar al usuario
+      mostrarError(errorResultado, 'No fue posible guardar tu resultado.');
     }
   });
 }
@@ -1022,29 +1821,80 @@ function showHandResults() {
 function showFinalResults() {
   const game = appState.currentGame;
 
+  //La partida terminó: detener listeners activos
+  stopResultsListener();
+  stopHandListener();
+  
+  //Escuchar si vamos a una partida de revancha
+  startNextGameListener();
+
   //Calcular el o los ganadores
   const winners = getGameWinners(game);
 
+  //Definirsi es Host o no
+  const playerIsHost = appState.currentPlayerId === game.hostPlayerId;
+
   //Renderizar la pantalla final
-  app.innerHTML = renderFinalResults(game, winners);
+  app.innerHTML = renderFinalResults(game, winners, playerIsHost);
 
   //Funcionalidad del botón para revisar los resultados
   const btnVolverTabla = document.querySelector('#btnVolverTabla');
 
   btnVolverTabla.addEventListener('click', () => {
-    showGame();
+    showGame(true);
   });
 
   //Funcionalidad del botón para crear una nueva partida
   const btnNuevaPartida = document.querySelector('#btnNuevaPartida');
 
-  btnNuevaPartida.addEventListener('click', () => {
-    const newGame = createNextGame(game, winners);
+  if(btnNuevaPartida){
+    btnNuevaPartida.addEventListener('click', async () => {
+      //Evitar múltiples clics mientras se crea la nueva partida
+      btnNuevaPartida.disabled = true;
+      btnNuevaPartida.textContent = 'Creando nueva partida...';
 
-    appState.currentGame = newGame;
+      try {
+        //Detener cualquier escucha asociada a la partida finalizada
+        stopGameListener();
+        stopPlayersListener();
+        stopHandListener();
+        stopResultsListener();
 
-    showLobby();
-  });
+        const previousGameId = appState.currentGameId;
+
+        //Construir la nueva partida utilizando los jugadores y ganador de la anterior
+        const newGame = createNextGame(game, winners);
+
+        //Crear un nuevo documento de partida en Firestore
+        const newGameId = await createGameInFirestore(newGame);
+
+        //Guardar todos los jugadores de la nueva partida respetando el nuevo orden
+        for (let index = 0; index < newGame.players.length; index++) {
+          await addPlayerToGame(newGameId, newGame.players[index], index);
+        }
+
+        //Informar a todos los dispositivos cuál es la nueva partida.
+        await updateNextGameId(previousGameId, newGameId);
+
+        //Cambiar el estado local para que ahora apunte a la nueva partida
+        appState.currentGame = newGame;
+        appState.currentGameId = newGameId;
+
+        //El jugador de este dispositivo conserva su mismo playerId
+        saveSession(newGameId, appState.currentPlayerId);
+
+        //Entrar al lobby de la nueva partida
+        showLobby();
+      } catch (error) {
+        console.error('Error al crear la nueva partida: ', error);
+
+        btnNuevaPartida.disabled = false;
+        btnNuevaPartida.textContent = 'Nueva partida';
+
+        alert('No fue posible crear la nueva partida.');
+      }
+    });
+  }
 }
 
 /*
@@ -1077,6 +1927,7 @@ function showAbortedGame() {
     btnVolverInicio.addEventListener('click', () => {
       //Detener listeners para abandonar la partida
       stopPlayersListener();
+      stopHandListener();
       stopGameListener();
 
       //Eliminar gameId y playerId

@@ -222,7 +222,7 @@ export function subscribeToGamePlayers(gameId, onPlayersChanged, onError) {
   const playersQuery = query(playersCollection, orderBy('order'));
 
   //Iniciar escucha en tiempo real
-  const unsubcribe = onSnapshot(playersQuery, (snapshot) => {
+  const unsubscribe = onSnapshot(playersQuery, (snapshot) => {
     //Convertir los documentos de firestore nuevamente a formato utilizado por la app
     const players = snapshot.docs.map((document) => ({
       id: document.id,
@@ -247,7 +247,7 @@ export function subscribeToGamePlayers(gameId, onPlayersChanged, onError) {
     listeners activos cuando el usuario
     abandone el lobby.
   */
-  return unsubcribe;
+  return unsubscribe;
 }
 
 /*
@@ -426,6 +426,71 @@ export async function createHandInFirestore(gameId, hand) {
 }
 
 /*
+  Función para actualizar el estado
+  de una mano existente.
+
+  Los estados que utilizaremos son:
+
+  - collecting_results
+  - completed
+*/
+export async function updateHandStatus(gameId, handId, status) {
+  //Crear referencia directa al documento de la mano
+  const handDocument = doc(db, 'games', gameId, 'hands', handId);
+
+  //Actualizar solo su estado
+  await updateDoc(handDocument, {
+    status: status,
+  });
+}
+
+/*
+  Función para escuchar en tiempo real
+  una mano específica de la partida.
+
+  La mano se encuentra en:
+
+  games/{gameId}/hands/{handId}
+
+  Esta escucha permitirá que todos los
+  dispositivos detecten cuando el host
+  haya finalizado físicamente la mano.
+*/
+export function subscribeToHand(gameId, handId, onHandChanged, onError){
+  //Crear una referencia a la mano que se quiere escuchar
+  const handDocument = doc(db, 'games', gameId, 'hands', handId);
+
+  //Iniciar la escucha en tiempo real 
+  const unsubscribe = onSnapshot(handDocument, (snapshot) => {
+    //Al iniciar la escucha pueda que la mano aun no exista
+    if(!snapshot.exists()){
+      //Informar al código que inició la suscripción, que todavía no existe la mano
+      onHandChanged(null);
+      return;
+    }
+
+    //Reconstruir la mano utilizando el formato que necesita la aplicación
+    const handData = {
+      id: snapshot.id,
+      ...snapshot.data(),
+    };
+
+    //Entregar los datos actualizados al código que inció la escucha
+    onHandChanged(handData);
+  },
+    //Manejar posibles errores
+    (error) => {
+      if(onError){
+        onError(error);
+      }
+    }
+  );
+
+  //Devolver la función creada por Firestore para después poder detener el listener
+  return unsubscribe;
+}
+
+/*
   Función para guardar el resultado individual
   de un jugador dentro de una mano.
 
@@ -437,7 +502,15 @@ export async function saveHandResult(gameId, handId, result) {
   //Obtener referencia al documento del resultado del jugador
   const resultDocument = doc(db, 'games', gameId, 'hands', handId, 'results',result.playerId);
 
-  //Guardar el resultado usando player Id
+  //Comprobar si este jugador ya registró un resultado para esta mano
+  const existingResult = await getDoc(resultDocument);
+
+  //Si ya existe, no permitir que guarde otra vez y sobreescriba
+  if(existingResult.exists()){
+    throw new Error('RESULT_ALREADY_EXISTS');
+  }
+
+  //Si aún no existe, guardar el resultado usando player Id
   await setDoc(resultDocument, {
     //Código del juego completado
     completedGameCode: result.completedGameCode,
@@ -447,6 +520,28 @@ export async function saveHandResult(gameId, handId, result) {
     purchasesUsed: result.purchasesUsed,
     //Fecha del registro
     createdAt: serverTimestamp(),
+  });
+}
+
+/*
+  Función que permite al anfitrión corregir
+  un resultado ya registrado.
+
+  Solo modifica:
+  - puntos;
+  - compras utilizadas.
+
+  No crea un nuevo resultado.
+*/
+export async function updateHandResult(gameId, handId, playerId, completedGameCode, points, purchasesUsed) {
+  //Referencia al resultado específico del jugador 
+  const resultDocument = doc(db, 'games', gameId, 'hands', handId, 'results', playerId);
+
+  //Actualizar únicamente los valores corregibles
+  await updateDoc(resultDocument, {
+    completedGameCode: completedGameCode,
+    points: points,
+    purchasesUsed: purchasesUsed,
   });
 }
 
@@ -512,6 +607,42 @@ export async function getHandResults(gameId, handId) {
 }
 
 /*
+  Función para escuchar en tiempo real
+  los resultados de una mano.
+
+  Cada vez que un jugador registre
+  su resultado, todos los dispositivos
+  recibirán nuevamente la lista completa.
+*/
+export function subscribeToHandResults(gameId, handId, onResultsChanged, onError) {
+  //Obtener referencia a: games/{gameId}/hands/{handId}/results
+  const resultsCollection = collection(db, 'games', gameId, 'hands', handId, 'results');
+
+  //Escuchar los cambios de la subcolección
+  const unsubscribe = onSnapshot(resultsCollection, (snapShot) => {
+    //Convertir los documentos de firebase al formato usado por la aplicación
+    const results = snapShot.docs.map((document) => ({
+      playerId: document.id,
+      completedGameCode: document.data().completedGameCode,
+      points: document.data().points,
+      purchasesUsed: document.data().purchasesUsed,
+    }));
+
+    //Entregar la lista actualizada
+    onResultsChanged(results);
+  },
+    (error) => {
+      if(onError){
+        onError(error);
+      }
+    }
+  );
+
+  //Firestore devuelve la función utilizada para cancelar la escucha
+  return unsubscribe;
+}
+
+/*
   Función para recuperar todas las manos guardadas
   de una partida respetando su número.
 */
@@ -530,6 +661,11 @@ export async function getHandsFromGame(gameId) {
   for(const document of snapshot.docs){
     const handData = document.data();
 
+    //Solo las manos completamente cerradas forman parte del historial de puntuación
+    if(handData.status !== 'completed'){
+      continue;
+    }
+
     const results = await getHandResults(gameId, document.id);
 
     //Reconstruir la estructura de la lógica local
@@ -542,4 +678,16 @@ export async function getHandsFromGame(gameId) {
   }
   
   return hands;
+}
+
+/*
+  Vincula una partida finalizada con la
+  siguiente partida creada por el host.
+*/
+export async function updateNextGameId(gameId, nextGameId) {
+  const gameDocument = doc(db, 'games', gameId);
+
+  await updateDoc(gameDocument, {
+    nextGameId: nextGameId,
+  });
 }
