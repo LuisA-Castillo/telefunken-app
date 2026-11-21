@@ -5,7 +5,7 @@ import { GAME_STATUS, GAMES, getOrderedGame, arePurchasesAllowed } from '../util
 import { getGameScore, getPenaltyScores, getMaxPenaltyCount, getPlayerTotal } from '../utils/gameTable';
 
 //Importar función de finalización del juego
-import { isGameFinished } from '../utils/handResults';
+import { getPlayerOnGameFromWinning, isGameFinished } from '../utils/handResults';
 
 //Renderizar la pantalla principal donde se muestra la tabla de jugadores y sus manos
 export function renderGame(game, playerIsHost, readOnly = false) {
@@ -23,6 +23,9 @@ export function renderGame(game, playerIsHost, readOnly = false) {
 
     //Verificamos si el juego ha finalizado
     const gameFinished = isGameFinished(game);
+
+    //Comprobar si existe un jugador que está a un juego de ganar
+    const playerOneGameFromWinning = getPlayerOnGameFromWinning(game);
 
     const readOnlyNavigation = readOnly ? `
     <div class="alert alert-secondary mt-4">
@@ -83,6 +86,35 @@ export function renderGame(game, playerIsHost, readOnly = false) {
                 `).join('')}
             </div>
         </section>
+
+        <!-- Aquí construimos la tabla -->
+        ${
+            playerOneGameFromWinning && !gameFinished && !readOnly ? `
+            <section class="mb-4">
+                <div class="alert alert-warning mb-0" role="alert">
+                    <div class="fw-bold mb-1">
+                        ⚠️ ${playerOneGameFromWinning.player.name} está a un juego de ganar
+                    </div>
+
+                    <div>
+                        Si completa
+                        <strong>
+                            ${playerOneGameFromWinning.missingGame.code}
+                        </strong>
+                        en esta mano, la partida termina.
+                    </div>
+
+                    ${
+                        playerIsHost ? `
+                        <button type="button" class="btn btn-warning mt-3" id="btnDeclararJuegoFinal">
+                            Declarar juego completado y finalizar partida
+                        </button>
+                        ` : ''
+                    }
+                </div>
+            </section>
+            ` : ''
+        }
 
         <!-- Aquí construimos la tabla -->
         <section>
@@ -268,7 +300,7 @@ export function renderGame(game, playerIsHost, readOnly = false) {
                             <input type="radio" class="form-check-input" name="endReason" id="endReasonPlayerOut" value="player_out">
 
                             <label for="endReasonPlayerOut" class="form-check-label">
-                                Un jugador se quedó sin cartas
+                                Un jugador ganó la mano
                             </label>
                         </div>
 
@@ -295,6 +327,47 @@ export function renderGame(game, playerIsHost, readOnly = false) {
                 </div>
             </div>
         </div>
+
+        <!-- Modal para finalizar la partida porque un jugador finalizó sus 7 manos antes que los demás -->
+        ${playerOneGameFromWinning && playerIsHost ? `
+        <div class="modal fade" id="modalJuegoFinalCompletado" tabindex="-1" aria-labelledby="modalJuegoFinalCompletadoLabel" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="modalJuegoFinalCompletadoLabel">
+                            Finalizar partida
+                        </h5>
+
+                        <div class="modal-body">
+                            <p>
+                                ¿Confirmas que 
+                                <strong>
+                                    ${playerOneGameFromWinning.player.name}
+                                </strong>
+                                completó
+                                <strong>
+                                    ${playerOneGameFromWinning.missingGame.code}
+                                </strong>
+                                ?
+                            </p>
+
+                            <div class="alert alert-danger d-none mt-3" id="errorJuegoFinalCompletado"></div>
+                        </div>
+                    </div>
+
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                            Cancelar
+                        </button>
+                    
+                        <button type="button" class="btn btn-warning" id="btnConfirmarJuegoFinal">
+                            Confirmar y finalizar
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        ` : ''}
     </main>
     `;
 }
