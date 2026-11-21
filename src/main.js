@@ -20,7 +20,7 @@ import { GAME_STATUS, getInitialPurchases, getOrderedGame, movePlayer, removePla
 import { initializeGame } from './utils/gameSetup';
 
 //Importar funiones para manejar los resultados de la mano
-import { advanceToNextHand, createPlayerResult, getGameWinners, isGameFinished, rebuildRemainingPurchases, saveHandResults, validateHandResults, validatePlayerResult } from './utils/handResults';
+import { advanceToNextHand, createPlayerResult, getGameWinners, getPlayerOnGameFromWinning, isGameFinished, rebuildRemainingPurchases, saveHandResults, validateHandResults, validatePlayerResult } from './utils/handResults';
 
 //Importar la generación de Ids
 import { generatePlayerId } from './utils/playerId';
@@ -41,7 +41,7 @@ import { canManageLobby, canJoinGame } from './utils/lobbyPermissions';
 import { leaveLobby } from './utils/lobbyActions';
 
 //Importar las funciones para gestionar una partida en firestore
-import { addPlayerToGame, createGameInFirestore, createHandInFirestore, deleteGame, deletePlayerFromGame, findGameByCode, getGameById, getHandResults, getHandsFromGame, getPlayersFromGame, subscribeToGame, subscribeToGamePlayers, saveHandResult, subscribeToHandResults, subscribeToHand, updateGameHost, updateGameState, updateHandResult, updateHandStatus, updateNextGameId, updatePlayersOrder } from './services/gameRepository';
+import { addPlayerToGame, createGameInFirestore, createHandInFirestore, deleteGame, deletePlayerFromGame, findGameByCode, finishGameByCompletedFinalGame, getGameById, getHandResults, getHandsFromGame, getPlayersFromGame, subscribeToGame, subscribeToGamePlayers, saveHandResult, subscribeToHandResults, subscribeToHand, updateGameHost, updateGameState, updateHandResult, updateHandStatus, updateNextGameId, updatePlayersOrder } from './services/gameRepository';
 
 //Importar las funciones para manejar la sesión local
 import { clearSession, loadSession, saveSession } from './services/sessionStorage';
@@ -58,7 +58,6 @@ import { renderHandResults } from './pages/handResults';
 import { renderFinalResults } from './pages/finalResults';
 import { renderAbortedGame } from './pages/abortedGame';
 import { renderJoinGame } from './pages/joinGame';
-import { doc } from 'firebase/firestore';
 
 /*
   Buscar en index.html el elemento cuyo id es "app".
@@ -1041,6 +1040,94 @@ function showGame(readOnly = false) {
   //La mesa está activa. Se inicia la escucha de la mano
   startCurrentHandListener();
 
+  /*
+    ------------------------------------------------
+    CIERRE ANTICIPADO DEL MODO LIBRE
+    ------------------------------------------------
+  */
+  const btnDeclararJuegoFinal = document.querySelector('#btnDeclararJuegoFinal');
+  
+  if(btnDeclararJuegoFinal){
+    //Recuperar quién esta a un juego de ganar
+    const playerOneGameFromWinning = getPlayerOnGameFromWinning(game);
+
+    const modalJuegoFinalCompletado = document.querySelector('#modalJuegoFinalCompletado');
+
+    const juegoFinalModal = modalJuegoFinalCompletado ? new Modal(modalJuegoFinalCompletado) : null;
+
+    //El botón de la mesa se abre solo con confirmación
+    btnDeclararJuegoFinal.addEventListener('click', () => {
+      if(!playerOneGameFromWinning || !juegoFinalModal){
+        return;
+      }
+
+      juegoFinalModal.show();
+    });
+
+    const btnConfirmarJuegoFinal = document.querySelector('#btnConfirmarJuegoFinal');
+    const errorJuegoFinalCompletado = document.querySelector('#errorJuegoFinalCompletado');
+
+    if(btnConfirmarJuegoFinal){
+      btnConfirmarJuegoFinal.addEventListener('click', async () => {
+        //Volver a comprobar condición antes de finalizar
+        const winningCandidate = getPlayerOnGameFromWinning(game);
+
+        if(!winningCandidate){
+          errorJuegoFinalCompletado.textContent = 'Ya no existe un jugador en condición de cierre anticipado';
+          errorJuegoFinalCompletado.classList.remove('d-none');
+          return;
+        }
+
+        //Crear la mano especial
+        const hand = {
+          number: game.currentHand,
+          dealerIndex: game.dealerIndex,
+          endReason: 'final_game_completed',
+        };
+
+        //Crear el resultado necesario para completar el séptimo juego
+        const result = {
+          playerId: winningCandidate.player.id,
+          completedGameCode: winningCandidate.missingGame.code,
+          points: 0,
+          purchasesUsed: 0,
+        };
+
+        try {
+          btnConfirmarJuegoFinal.disabled = true;
+          btnConfirmarJuegoFinal.textContent = 'Finalizado...';
+
+          //Persistir todo de forma atómica
+          await finishGameByCompletedFinalGame(appState.currentGameId, hand, result);
+
+          //Recuperar nuevamente todas las manos completadas directamente desde Firebase
+          const completedHands = await getHandsFromGame(appState.currentGameId);
+
+          game.hands = completedHands;
+
+          game.status = GAME_STATUS.FINISHED;
+
+          //Detener listeners de la partida activa
+          stopResultsListener();
+          stopHandListener();
+          stopGameListener();
+
+          juegoFinalModal.hide();
+
+          //Mostrar resultados finales
+          showFinalResults();
+        } catch (error) {
+          console.error('Error al finalizar por último juego completado: ', error);
+
+          btnConfirmarJuegoFinal.disabled = false;
+          btnConfirmarJuegoFinal.textContent = 'Confirmar y finalizar';
+          errorJuegoFinalCompletado.textContent = 'No fue posible finalizar la partida';
+          errorJuegoFinalCompletado.classList.remove('d-none');
+        }
+      });
+    }
+  }
+
   //Evento para finalizar la mano y registrar los resultados
   const btnFinalizarMano = document.querySelector('#btnFinalizarMano');
 
@@ -1731,6 +1818,13 @@ function showHandResults(hand) {
     //Si el campo de compras no existe usar 0
     const purchasesUsed = purchasesInput ? purchasesInput.value : '0';
 
+    //Si el campo de compras existe, el jugadro debe indicar explícitamente cuántas compras utilizó, incluso si fueron 0.
+    if(purchasesInput && purchasesUsed.trim() === ''){
+      mostrarError(errorResultado, 'Ingresa cuántas compras utilizaste. Escribe 0 si no realizaste compras.');
+
+      return;
+    }
+
     //Por defecto ningún juego se considera completado hasta determinarlo segun la modalidad
     let completedGameCode = null;
 
@@ -2178,9 +2272,50 @@ async function initializeApp(params) {
   } catch (error) {
     console.error('Error al restaurar la sesión: ', error);
 
-    //Si firestore falla temporalmente se regresa al home TEMPORALMENTE 
-    showHome();
+    //Si firestore, firebase o algun componente falla temporalmente se redirige a una pantalla para recuperar la sesión  
+    showSessionRecovery();
   }
+}
+
+/*
+  Funcion que uestra una pantalla de recuperación cuando
+  existe una sesión guardada, pero temporalmente
+  no fue posible reconstruir la partida desde Firestore.
+
+  IMPORTANTE:
+  No se elimina la sesión local.
+*/
+function showSessionRecovery() {
+  app.innerHTML = `
+  <main class="container py-5">
+      <div class="card mx-auto" style="max-width: 520px;">
+          <div class="card-body text-center">
+              <h1 class="h4 fw-bold mb-3">
+                  Reconectando con la partida
+              </h1>
+
+              <p class="text-secondary mb-4">
+                  No fue posible recuperar la partida en este momento <br>
+                  Tu sesión continúa guardada.
+              </p>
+
+              <button type="button" class="btn btn-primary w-100" id="btnReintentarSesion">
+                  Reintentar conexión
+              </button>
+          </div>
+      </div>
+  </main>
+  `;
+
+  const btnReintentarSesion = document.querySelector('#btnReintentarSesion');
+
+  btnReintentarSesion.addEventListener('click', async () => {
+    btnReintentarSesion.disabled = true;
+    btnReintentarSesion.textContent = 'Reconectando...';
+
+    //Ejecutar el proceso de restauración de sesión
+    await initializeApp();
+  });
 }
 
 /*

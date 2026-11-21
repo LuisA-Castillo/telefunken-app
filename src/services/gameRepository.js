@@ -59,8 +59,12 @@
   where():
   Permite establecer una condición
   para filtrar documentos.
+
+  writeBatch():
+  Permite agrupar varias escrituras de Firestore 
+  y ejecutarlas como una sola operación atómica.
 */
-import { addDoc, collection, deleteDoc, doc, getDoc, getDocs, limit, onSnapshot, orderBy, query, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore';
+import { addDoc, collection, deleteDoc, doc, getDoc, getDocs, limit, onSnapshot, orderBy, query, serverTimestamp, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
 
 //Importar la instancia de Firestore configurada
 import { db } from '../firebase/firebaseConfig';
@@ -71,7 +75,6 @@ import { db } from '../firebase/firebaseConfig';
   Recibe el objeto game que actualmente
   manejamos dentro de appState.
 */
-
 export async function createGameInFirestore(game) {
     //Obtener una referencia a la colección principal "games"
     const gameCollection = collection(db, 'games');
@@ -690,4 +693,52 @@ export async function updateNextGameId(gameId, nextGameId) {
   await updateDoc(gameDocument, {
     nextGameId: nextGameId,
   });
+}
+
+/*
+  Finaliza inmediatamente una partida en modo libre
+  cuando un jugador completa su séptimo juego.
+
+  Las tres operaciones se realizan juntas:
+  - guardar la mano;
+  - guardar el último juego del ganador;
+  - marcar la partida como finalizada.
+*/
+export async function finishGameByCompletedFinalGame(gameId, hand, result) {
+  //Se crea un batch para que todos los cambios se confirmen juntos en Firestore
+  const batch = writeBatch(db);
+
+  //Documento principal de la partida
+  const gameDocument = doc(db, 'games', gameId);
+
+  //Documento de la mano actual
+  const handDocument = doc(db, 'games', gameId, 'hands', `hand-${hand.number}`);
+
+  //Resultado del jugador ganador
+  const resultDocument = doc(db, 'games', gameId, 'hands', `hand-${hand.number}`, 'results', result.playerId);
+
+  //Guardar la mano como completada
+  batch.set(handDocument, {
+    number: hand.number,
+    dealerIndex: hand.dealerIndex,
+    endReason: 'final_game_completed',
+    status: 'completed',
+    createdAt: serverTimestamp(),
+  });
+
+  //Registra el último juego completado por el ganador
+  batch.set(resultDocument, {
+    completedGameCode: result.completedGameCode,
+    points: result.points,
+    purchasesUsed: result.purchasesUsed,
+    createdAt: serverTimestamp(),         
+  });
+
+  //Finalizar partida
+  batch.update(gameDocument, {
+    status: 'finished',
+  });
+
+  //Confirmar las tres operaciones juntas
+  await batch.commit();
 }
