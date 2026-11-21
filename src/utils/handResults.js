@@ -152,6 +152,66 @@ export function isGameFinished(game) {
 }
 
 /*
+  Función que detecta si existe EXACTAMENTE un 
+  jugador que está a un solo juego de completar
+  los siete juegos del modo libre.
+
+  Devuelve:
+  {
+    player,
+    missingGame
+  }
+
+  Si no existe exactamente un jugador
+  en esa situación, devuelve null.
+*/
+export function getPlayerOnGameFromWinning(game) {
+    //Esta regla solo existe en modo 'libre'
+    if(game.mode !== 'libre'){
+        return null;
+    }
+
+    //Buscar y guardar los jugadores q tiene exactamente 6 manos completadas
+    const candidates = game.players.map((player) => {
+        //Recuperar todos los resultados de los jugadores
+        const playerResults = game.hands.flatMap((hand) => 
+        hand.results.filter((result) => result.playerId === player.id));
+
+        //Obtener únicamente códigos de juego completados
+        const completedGameCode = playerResults
+        .filter((result) => result.completedGameCode !== null)
+        .map((result) => result.completedGameCode);
+
+        //Eliminar posibles códigos repetidos
+        const uniqueCompletedGames = new Set(completedGameCode);
+
+        //Escogemos solo el que tiene 6 de 7 juegos
+        if(uniqueCompletedGames.size !== 6){
+            return null;
+        }
+
+        //Encontrar cual es el juego que le falta
+        const missingGame = GAMES.find((gameItem) => !uniqueCompletedGames.has(gameItem.code));
+
+        if(!missingGame){
+            return null;
+        }
+
+        return{
+            player,
+            missingGame,
+        };
+    }).filter((candidate) => candidate !== null);
+
+    //Esto solo aplica cuando existe un único jugador en esta situación
+    if(candidates.length !== 1){
+        return null;
+    }
+
+    return candidates[0];
+}
+
+/*
   Función que obtiene los jugadores ganadores
   de una partida que ya ha terminado.
 

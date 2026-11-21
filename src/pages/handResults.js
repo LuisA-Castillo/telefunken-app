@@ -15,7 +15,7 @@ function renderOrderedPlayerResult(player, currentGame, purchasesAllowed) {
 
     <div class="row g-3">
         <!-- Puntos -->
-        <div class="col-6">
+        <div class="col-6 d-flex flex-column">
             <label for="points-${player.id}" class="form-label">
                 Puntos
             </label>
@@ -25,15 +25,19 @@ function renderOrderedPlayerResult(player, currentGame, purchasesAllowed) {
 
         <!-- Compras utilizadas -->
         ${purchasesAllowed ? `
-            <div class="col-6">
+            <div class="col-6 d-flex flex-column">
                 <label for="purchases-${player.id}" class="form-label">
                     Compras
                 </label>
 
-                <input type="number" class="form-control" id="purchases-${player.id}" min="0" step="1" max="${player.purchasesRemaining}" inputmode="numeric" value="0">
+                <input type="number" class="form-control" id="purchases-${player.id}" min="0" step="1" max="${player.purchasesRemaining}" inputmode="numeric">
 
                 <div class="form-text">
-                    Disponibles: ${player.purchasesRemaining}
+                    Disponibles: 
+                    <strong>
+                        ${player.purchasesRemaining}.
+                    </strong>
+                    Ingresa 0 si no realizaste compras.
                 </div>
             </div> 
         ` : `
@@ -85,7 +89,7 @@ function renderFreePlayerResult(game, player) {
 
     <div class="row g-3">
         <!-- Juego completado -->
-        <div class="col-4">
+        <div class="col-12 col-md-4 d-flex flex-column">
             <label for="game-${player.id}" class="form-label">
                 Juego
             </label>
@@ -104,7 +108,7 @@ function renderFreePlayerResult(game, player) {
         </div>
     
         <!-- Puntos -->
-        <div class="col-4">
+        <div class="col-12 col-md-4 d-flex flex-column">
             <label for="points-${player.id}" class="form-label">
                 Puntos
             </label>
@@ -113,15 +117,19 @@ function renderFreePlayerResult(game, player) {
         </div>
 
         <!-- Compras utiizadas -->
-        <div class="col-4">
-            <label for="purchases-${player.id}">
+        <div class="col-12 col-md-4 d-flex flex-column">
+            <label for="purchases-${player.id}" class="form-label">
                 Compras
             </label>
 
-            <input type="number" class="form-control" id="purchases-${player.id}" min="0" max="${player.purchasesRemaining}" step="1" inputmode="numeric" value="0">
+            <input type="number" class="form-control" id="purchases-${player.id}" min="0" max="${player.purchasesRemaining}" step="1" inputmode="numeric">
 
             <div class="form-text">
-                Disponibles: ${player.purchasesRemaining}
+                Disponibles: 
+                <strong>
+                    ${player.purchasesRemaining}.
+                </strong>
+                Ingresa 0 si no realizaste compras.
             </div>
         </div>
     </div>
@@ -144,7 +152,7 @@ export function renderHandResults(game, player, hand) {
 
     //Convertir el código interno del motivo de cierre en un texto comprensible
     const endReasonText = hand.endReason === 'player_out' ? 
-    'Un jugador se quedó sin cartas' : 'Se agotó la pila de robo';
+    'Un jugador ganó la mano' : 'Se agotó la pila de robo';
 
     return `
     <main class="container py-3">
